@@ -1,0 +1,12 @@
+{
+  "content_hash": "69b7f9f5fc7bfb09",
+  "model_name": "all-MiniLM-L6-v2",
+  "rows": 15692,
+  "dims": 384,
+  "source_files": [
+    "views\\CompanyDetail.csv",
+    "views\\Certification.csv",
+    "views\\Facilities.csv",
+    "views\\Products.csv"
+  ]
+}

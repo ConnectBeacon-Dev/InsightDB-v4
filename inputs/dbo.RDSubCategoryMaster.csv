@@ -1,0 +1,40 @@
+Id,RDCategory_Fk_Id,RDSubCategoryName,IsActive
+1,1,Aircraft,1
+2,1,Missiles,1
+3,2,Weapons,1
+4,2,Ammunition,1
+5,2,Combat Vehicles,1
+6,3,Ballistic Missiles,1
+7,3,Cruise Missiles,1
+8,3,Anti-aircraft Missiles,1
+9,3,Tracking systems,1
+10,4,Naval Platforms,1
+11,4,"Naval Warships, Submarines and underwater Systems",1
+12,4,Naval weapons,1
+13,4,Materials for Naval platform,1
+14,5,Communication systems,1
+15,5,Radar,1
+16,5,Electronic Warfare Systems,1
+17,5,Other Electronic Device,1
+18,6,Protection of military networks and systems from cyberattacks,1
+19,7,Technologies for military applications in space,1
+20,8,Lasers,1
+21,8,High-powered microwaves for potential military applications,1
+22,9,"Technologies for hypersonic flight, which involves speeds of Mach 5 and above",1
+23,10,Military applicatrions for intelligence analysis,1
+24,10,Military applications for autonomous weapons systems,1
+25,11,"New materials for lighter, stronger, and more resilent military equipment",1
+26,12,Development of drones,1
+27,12,Unmanned systems for surveillance,1
+28,12,Reconnaissance and combat,1
+29,13,Aircraft,1
+30,13,Missiles,1
+31,13,Other vehicles,1
+32,14,Secure communication,1
+33,14,Cryptography,1
+34,15,Bomb disposal,1
+35,15,Reconnaissance,1
+36,15,Combat support,1
+37,16,Exoskeletons,1
+38,16,Wearable technology,1
+39,16,Neural interfaces,1

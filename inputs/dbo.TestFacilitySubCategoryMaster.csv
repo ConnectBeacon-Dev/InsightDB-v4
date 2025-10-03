@@ -1,0 +1,451 @@
+Id,TestFacility_Fk_Id,SubCategoryName,Description,IsActive
+1,0,Temperature Cycling,NULL,1
+2,0, Humidity Chamber,NULL,1
+3,0, X-Ray Radiography  Inspection,NULL,1
+4,0,% of Elongation,NULL,1
+5,0,% of reduction in area,NULL,1
+6,0,1. Scanning Electron Microscope 2. Energy Dispersive X-ray spectroscopy,NULL,1
+7,0,1. Stereo Microscope 2. Digital Imaging technique,NULL,1
+8,0,1000A LOAD BANK AND POWER SOURCE,NULL,1
+9,0,Abrasion Resistance Tester for Zipper,NULL,1
+10,0,AC HIGH Voltage Test Set,NULL,1
+11,0,AC/DC VOLTAGE CURRENT STANDARD,NULL,1
+12,0,Acceleration Machine ,NULL,1
+13,0,Acetone,NULL,1
+14,0,Air Ageing Oven,NULL,1
+15,0,"Aircraft Electrical characteristics MIL-STD-704 Version D,E & F",NULL,1
+16,0,ALTITUDE,NULL,1
+17,0,Alumino Ferric,NULL,1
+18,0,Ammunition Protective Composition No 210 Nitrocellulose lacquor,NULL,1
+19,0,Ammunition Protective composition No 215 Varnish Oil bitumen RD 1219,NULL,1
+20,0,Ammunition Protective Composition No 217 Lacquer clear Nitrocellulose,NULL,1
+21,0,ANALOG  PLUNGER DIAL GAUGE,NULL,1
+22,0,APC - 2,NULL,1
+23,0,APC - 201,NULL,1
+24,0,Ash Content,NULL,1
+25,0,ATOMIC ABSORPTION SPECTROPHOTOMETER,NULL,1
+26,0,Audio Frequency Signal Generation,NULL,1
+27,0,Automatic,NULL,1
+28,0,AVERAGE GRAIN SIZE MEASUREMENT BY COMPARISION METHOD,NULL,1
+29,0,Average grain size of copper alloys,NULL,1
+30,0,Barium Chromate,NULL,1
+31,0,Basic Lead Stearate,NULL,1
+32,0,Bend test,NULL,1
+33,0,Bend Test Apparatus,NULL,1
+34,0,BEVEL PROTRACTOR,NULL,1
+35,0,Bleached Cotton linter  Cellulose ,NULL,1
+36,0,Blood Penetration Tester,NULL,1
+37,0,Botton Load Tester,NULL,1
+38,0,Brinell cum Vicker Hardness Tester,NULL,1
+39,0,Brinell Hardness,NULL,1
+40,0,Brinell Hardness Test,NULL,1
+41,0,Brinell Hardness Test of ferrous & non-ferrous metals,NULL,1
+42,0,BRINELL HARDNESS TESTING MACHINE,NULL,1
+43,0,Brinnel Hardness Test,NULL,1
+44,0,Brinnel Hardness Tester,NULL,1
+45,0,BUMP MACHINE,NULL,1
+46,0,Bump Test Machine,NULL,1
+47,0,Bundesmann Apparatus,NULL,1
+48,0,Bursting Strength,NULL,1
+49,0,Bursting Strength Tester,NULL,1
+50,0,Calcium carbonate,NULL,1
+51,0,CALIBRATION,NULL,1
+52,0,carbon and low alloy steel,NULL,1
+53,0,CARBON AND SULPHUR ANALYSER,NULL,1
+54,0,Carbon and sulphur determinator,NULL,1
+55,0,Carbon Black,NULL,1
+56,0,"CARBON,  SULPHUR DETERMINATOR",NULL,1
+57,0,Case depth,NULL,1
+58,0,CASE DEPTH (HARDNESS METHOD),NULL,1
+59,0,CASE DEPTH (MICROSCOPIC METHOD),NULL,1
+60,0,Case Depth Measurement,NULL,1
+61,0,CATH Chamber,NULL,1
+62,0,CATH Profile testing,NULL,1
+63,0,Centrifugal Machine,NULL,1
+64,0,Charpy Impact Testing Machine,NULL,0
+65,0,Charpy U notch impact test of ferrous alloys,NULL,1
+66,0,Charpy V notch impact test at room temperature of ferrous alloys,NULL,1
+67,0,Chemical,NULL,1
+68,0,CHEMICAL ANALYSIS,NULL,1
+69,0,Chemical analysis of  Cast Iron by Optical Emission Spectrometer,NULL,1
+70,0,Chemical analysis of  Low Alloy Steel by Optical Emission Spectrometer,NULL,1
+71,0,Chemical analysis of  Stainless Steel by Optical Emission Spectrometer,NULL,1
+72,0,Chemical analysis of Aluminium and its alloys by Optical Emission Spectrometer,NULL,1
+73,0,Chemical analysis of Copper and its alloys by Optical Emission Spectrometer,NULL,1
+74,0,Chemical analysis of Tool Steel by Optical Emission Spectrometer,NULL,1
+75,0,CHEMICAL ANALYSIS WITH HOT PLATE,NULL,1
+76,0,Chemical analysis:Qualitative,NULL,1
+77,0,Chemical analysis:Quantitative,NULL,1
+78,0,CHEMICAL INORGANIC,NULL,1
+79,0,CHEMICAL ORGANIC MATERIAL TESTING,NULL,1
+80,0,CLIMATIC CHAMBER,NULL,1
+81,0,CLIMATIC CHAMBER AND HUMIDITY CHAMBER,NULL,1
+82,0,Climatic Profile Test set-up,NULL,1
+83,0,CMM,NULL,1
+84,0,COATING THICKNESS GAUGE,NULL,1
+85,0,Coating Thickness Guage,NULL,1
+86,0,Cobb Test Apparatus,NULL,1
+87,0,Color,NULL,1
+88,0,Color Shade Card,NULL,1
+89,0,Compression set and Air Aging Oven,NULL,1
+90,0,COMPRESSION TEST,NULL,1
+91,0,Compression Test of Spring,NULL,1
+92,0,Compression Testing Machine,NULL,1
+93,0,Compressional Recovery Apparatus,NULL,1
+94,0,Computerised Brinell Hardness Tester,NULL,1
+95,0,Condenser and Hot Plate,NULL,1
+96,0,CONE TESTER,NULL,1
+97,0,Consistency and Viscosity,NULL,1
+98,0,CONVENTIONAL WET METHOD,NULL,1
+99,0,Copper Base Alloys,NULL,1
+100,0,Corrosion Cabinet,NULL,1
+101,0,CORROSION CHAMBER,NULL,1
+102,0,Corrosion Testing in Salt bath,NULL,1
+103,0,Corrosion Testing in Salt spray chamber,NULL,1
+104,0,Counting Glass ,NULL,1
+105,0,Crease Recovery Tester,NULL,1
+106,0,Crock Meter,NULL,1
+107,0,Cross Hatch Cutter,NULL,1
+108,0,Curing Test Apparatus,NULL,1
+109,0,Current Injector (Primary),NULL,1
+110,0,DEAD WEIGHT  TESTER,NULL,1
+111,0,DEPTH VERNIER,NULL,1
+112,0,Di Ethyl Phthalate,NULL,1
+113,0,Di Phenyl Amine,NULL,1
+114,0,DIAL GAUGE (LEVER TYPE),NULL,1
+115,0,Dibutyl phthalate,NULL,1
+116,0,DIGITAL HEIGHT GAUGE,NULL,1
+117,0,Digital Impact tester,NULL,1
+118,0,Digital Industrial X-Ray Radiography,NULL,1
+119,0,Digital Karl Fischer Autotitrator (Moisture Content),NULL,1
+120,0,Digital Melting/Boiling Point Instrunment,NULL,1
+121,0,DIGITAL OHM METER (MICRO / MILLI),NULL,1
+122,0,Digital Refractometer,NULL,1
+123,0,Digital Rockiness Hardness Tester,NULL,1
+124,0,Digital Rockwell  Hardness Tester,NULL,1
+125,0,Digital Rockwell Hardness Tester,NULL,1
+126,0,DIGITAL SPRING BALANCE WEIGHING SCALE,NULL,1
+127,0,DIGITAL TACHOMETER,NULL,1
+128,0,Digital Tensile Strenght Tester,NULL,1
+129,0,DIGITAL THERMOMETER WITH SENSOR,NULL,1
+130,0,Digital Vernier Caliper,NULL,1
+131,0,Digital viscometer,NULL,1
+132,0,Direct Reading Spectrometer DV4,NULL,1
+133,0,Drape Meter,NULL,1
+134,0,Drying time on MS panel,NULL,1
+135,0,Durometer Rubber Hardness Tester,NULL,1
+136,0,DUST CHAMBER,NULL,1
+137,0,Dye Oil Orange,NULL,1
+138,0,Electrical Conductivity Check,NULL,1
+139,0,ELECTRO DYNAMIC VIBRATION SHAKER,NULL,1
+140,0,ELECTROLYSER,NULL,1
+141,0,Electromagnetic interference and Electromagnetic Susceptibility Testing,NULL,1
+142,0,Electromechanical,NULL,1
+143,0,Electromechanical (Automatic) + Hydraulic (Automatic),NULL,1
+144,0,Electronic Balance,NULL,1
+145,0,ELECTRONIC WEIGHING MACHINE,NULL,1
+146,0,Environment Test Chamber,NULL,1
+147,0,Environmental Chambers,NULL,1
+148,0,ESS Chamber,NULL,1
+149,0,Ether,NULL,1
+150,0,Ethyl Cellulose,NULL,1
+151,0,"Fatigue Testing of compnents viz Sturctures, springs, cushions etc.",NULL,1
+152,0,Fineness of grind,NULL,1
+153,0,Finish,NULL,1
+154,0,Flash Point,NULL,1
+155,0,Flattening Test,NULL,1
+156,0,Fluke 5500,NULL,1
+157,0,Fluke 5500/ Process Calibrators,NULL,1
+158,0,FREQUENCY CALIBRATION TEST BENCH,NULL,1
+159,0,FTIR Spectrometer,NULL,1
+160,0,Fuming Chamber,NULL,1
+161,0,General Micro structure Analysis,NULL,1
+162,0,Glass Plate and Hot Air Oven,NULL,1
+163,0,Gloss Meter,NULL,1
+164,0,Gloss Value,NULL,1
+165,0,Glycerine  for Nitration,NULL,1
+166,0,Grain Size,NULL,1
+167,0,Graphite Dry Sulphur Free,NULL,1
+168,0,GSM,NULL,1
+169,0,GSM pattern & Cutter and Weighing scale,NULL,1
+170,0,GSM pattern & Weighing scale,NULL,1
+171,0,GSM pattern and Weighing scale,NULL,1
+172,0,Hardenss testing of ferrous and non ferrous materials,NULL,1
+173,0,HARDNESS,NULL,1
+174,0,HARDNESS TESTER SHORE - A,NULL,1
+175,0,Hardness Testing,NULL,1
+176,0,Heat Resistance Tester for Zipper,NULL,1
+177,0,Heating Oven,NULL,1
+178,0,"High pressure power pack, 1000 bar",NULL,1
+179,0,HIGH VOLTAGE INSULATION BREAKDOWN TESTER - AC,NULL,1
+180,0,HIGH VOLTAGE INSULATION BREAKDOWN TESTER - AC/DC,NULL,1
+181,0,High Voltage Test Set,NULL,1
+182,0,Hot / Cold Chamber,NULL,1
+183,0,Hot Air Oven,NULL,1
+184,0,Hot and Cold Chamber,NULL,1
+185,0,Hot Chamber,NULL,1
+186,0,Hot Cold Chamber,NULL,1
+187,0,Hot Plate ,NULL,1
+188,0,Hot Pressing Apparatus,NULL,1
+189,0,Hounsfield Tensometer,NULL,1
+190,0,Humidity Chamber,NULL,1
+191,0,HUMIDTY CHAMBER,NULL,1
+192,0,Hydraulic,NULL,1
+193,0,"Hydraulic pump testing, Testing medium: SAE 10 Oil",NULL,1
+194,0,Hydro Static Pressure Head Tester,NULL,1
+195,0,Image Analyser,NULL,1
+196,0,Imapact machine,NULL,1
+197,0,IMMERSION CHAMBER,NULL,1
+198,0,Impact  Izod Test,NULL,1
+199,0,IMPACT CHARPY TEST,NULL,1
+200,0,Impact test,NULL,1
+201,0,Impact Test Charpy V-Notch,NULL,1
+202,0,Impact test Izod V-notch,NULL,1
+203,0,Impact Testing Machine,NULL,1
+204,0,INCLUSION RATING METHOD A,NULL,1
+205,0,Indirect Verification  ,NULL,1
+206,0,Inductively Coupled Plasma Optical Emission Spectrometer,NULL,1
+207,0,Instrument Calibration Shop,NULL,1
+208,0,Insulation Tester,NULL,1
+209,0,INSULATION TESTER (MEGGER),NULL,1
+210,0,Izod impact test of ferrous alloys,NULL,1
+211,0,Izod Testing Machine,NULL,1
+212,0,IZOD VALUE AT AMBIENT TEMPERATURE,NULL,1
+213,0,Laboratory Oven,NULL,1
+214,0,Laundro Meter,NULL,1
+215,0,LAUNDROMETER,NULL,1
+216,0,LCR Meter,NULL,1
+217,0,Leak Test Setup,NULL,1
+218,0,Leak Testing Setup,NULL,1
+219,0,Leakage Bridge,NULL,1
+220,0,LECO  CS  230,NULL,1
+221,0,Light Scattering Based Particle Size Analyzer,NULL,1
+222,0,Light Transmission MC,NULL,1
+223,0,Light Transmission Testing Setup,NULL,1
+224,0,Litharge,NULL,1
+225,0,Load Testing,NULL,1
+226,0,Load verification of Uni axial Testing Machine,NULL,1
+227,0,Macro structure Analysis,NULL,1
+228,0,Macrostructure,NULL,1
+229,0,Macro-structure Analysis,NULL,1
+230,0,Magenesium Powder Grade VIII,NULL,1
+231,0,Magnetic Particle Inspection Equipment,NULL,1
+232,0,Material Testing Department,NULL,1
+233,0,Measuring Scales,NULL,1
+234,0,MEASURING TAPE,NULL,1
+235,0,Mechanical,NULL,1
+236,0,Mechanical properties of metals,NULL,1
+237,0,Mechanical Textile Testing,NULL,1
+238,0,MECHANICAL WEIGHING MACHINE,NULL,1
+239,0,Melt Flow Index,NULL,1
+240,0,Metallic Materials Tensile testing,NULL,1
+241,0,Metallography,NULL,1
+242,0,METALLOGRAPHY AND ALLIED TEST,NULL,1
+243,0,"Metallography Test- Plain carbon steel, Alloy steel",NULL,1
+244,0,"Metallography Test- Plain carbon steel, Alloy steel and Brass (all grades)",NULL,1
+245,0,"Metallography Test- Plain carbon steel, Alloy steel, Brass (all grades)",NULL,1
+246,0,Metallurgical Microscope,NULL,1
+247,0,MICRO STRUCTURE,NULL,1
+248,0,Micro Vickers (Model Micro Duramat 4000E) Microscope,NULL,1
+249,0,Micro Vickers Hardness Test,NULL,1
+250,0,Micro Vickers Hardness Test of ferrous & non-ferrous metals,NULL,1
+251,0,Micro vickers hardness tester,NULL,1
+252,0,MICROMETER,NULL,1
+253,0,Microscope,NULL,1
+254,0,Microscope- Eddy Current Method,NULL,1
+255,0,Microstructure,NULL,1
+256,0,MOBILE ARC/SPARC SPARK OPTICAL EMISSION SPECTROMETER,NULL,1
+257,0,Moisture Content,NULL,1
+258,0,Muffle Furnace,NULL,1
+259,0,Muffle Furnance,NULL,1
+260,0,MULTIFUCTIONAL CALIBRATOR,NULL,1
+261,0,Multimeter,NULL,1
+262,0,nan,NULL,1
+263,0,Nitric Acid,NULL,1
+264,0,Non Destructive Testing,NULL,1
+265,0,Non Destructive Testing : Radiography Testing  (450 kV Digital Industrial X-Ray Machine),NULL,1
+266,0,NON METALLIC INCLUSION RATING,NULL,1
+267,0,NOx (Oxides of Nitrogen),NULL,1
+268,0,Oil Bath,NULL,1
+269,0,Oleum,NULL,1
+270,0,Oleum Testing,NULL,1
+271,0,Optical Emission Spectrometer,NULL,1
+272,0,OPTICAL EMMISSION SPECTROMETER,NULL,1
+273,0,OPTICAL MICROSCOPE,NULL,1
+274,0,"OXYGEN, NITROGEN, HYDROGEN DETERMINATOR",NULL,1
+275,0,Ozone Test Chamber,NULL,1
+276,0,Pendulum Impact Tester,NULL,1
+277,0,Pendulum testing apparatus,NULL,1
+278,0,Pendulum testing apparatus with deep freezer,NULL,1
+279,0,Peripheral Grain Growth in Aluminium alloys,NULL,1
+280,0,PERSPIROMETER,NULL,1
+281,0,pH Meter,NULL,1
+282,0,pH METER & WRIST ACTION SHAKER,NULL,1
+283,0,PH testing,NULL,1
+284,0,PHYSICAL AND MECHANICAL TESTS,NULL,1
+285,0,Pilling Tester,NULL,1
+286,0,PLANE STRAIN FRACTURE TOUGHNESS (K1C),NULL,1
+287,0,Pneumatic Shock Test Machine,NULL,1
+288,0,Portable Wheatstone Bridge,NULL,1
+289,0,Potassium Chlorate,NULL,1
+290,0,Potassium Nitrate,NULL,1
+291,0,Potassium Sulphate,NULL,1
+292,0,POWER SOURCE DC,NULL,1
+293,0,Prespirometer & Incubator,NULL,1
+294,0,PRESSURE  CALIBRATOR,NULL,1
+295,0,PRESSURE HEAD TESTER,NULL,1
+296,0,Pressure Test Apparatus,NULL,1
+297,0,Quality Control & Laboratory -Mishra Dhatu Nigam Limited,NULL,1
+298,0,QUALITY CONTROL CENTRAL LABORATORY,NULL,1
+299,0,QUALITY CONTROL CENTRAL LABORATORY PART OF QC(L/G),NULL,1
+300,0,QUALITY CONTROL CENTRAL LABORATORY PART OF QC(L/T&G),NULL,1
+301,0,Quick  Lime,NULL,1
+302,0,Radiography,NULL,1
+303,0,RADIUS GAUGE,NULL,1
+304,0,Rain Chamber,NULL,1
+305,0,RAIN TEST,NULL,1
+306,0,RANDOM OR SINE VIBRATION TEST,NULL,1
+307,0,Raw materials Intermediates and Propellants,NULL,1
+308,0,Reciprocating Movement of Zipper Tester,NULL,1
+309,0,Rectified Spirit,NULL,1
+310,0,RESISTANCE DECADE CALIBRATION TEST BENCH,NULL,1
+311,0,Reverse Bend test,NULL,1
+312,0,Rockwel hardness tester,NULL,1
+313,0,Rockwell Hardness,NULL,1
+314,0,Rockwell Hardness (B&C scale) test,NULL,1
+315,0,ROCKWELL HARDNESS MACHINE,NULL,1
+316,0,Rockwell Hardness Test,NULL,1
+317,0,Rockwell Hardness Test of ferrous & non-ferrous metals,NULL,1
+318,0,ROCKWELL HARDNESS TESTER,NULL,1
+319,0,ROPS (Roll over protective structrues),NULL,1
+320,0,Rotating Beam HCF Test,NULL,1
+321,0,RTD SENSOR WITH INDICATOR,NULL,1
+322,0,RTD SENSOR WITH INDICATOR (HUMIDITY SENSOR WITH INDICATOR),NULL,1
+323,0,Rubber Hardness Test,NULL,1
+324,0,Rubber Universal Testing Machine with long travel Extensometer,NULL,1
+325,0,Rubber Universal Testing Machine with long travel Extensometer and Environmental Test Chambers,NULL,1
+326,0,Rubber UTM  (UTB-9052),NULL,1
+327,0,Salt Fog Chamber,NULL,1
+328,0,Salt –Fog Machine,NULL,1
+329,0,Salt Spray Chamber,NULL,1
+330,0,Salt spry Chamber,NULL,1
+331,0,Sand and Dust Chamber,NULL,1
+332,0,Scanning Electron Microscopy,NULL,1
+333,0,Scratch Hardness Tester,NULL,1
+334,0,Shore Hardness Tester,NULL,1
+335,0,SHRINKAGE TEMPLATE,NULL,1
+336,0,Shrinkage Tray Tester,NULL,1
+337,0,SIEVE,NULL,1
+338,0,SLIP GAUGE,NULL,1
+339,0,Soda Ash  Technical,NULL,1
+340,0,Sodium Aluminium Fluoride,NULL,1
+341,0,soxhlet apparatus,NULL,1
+342,0,SOXHLET APPARATUS & HOT PLATE,NULL,1
+343,0,Soxhlet Apparatus & Water Bath,NULL,1
+344,0,SOXHLET EXTRACTOR,NULL,1
+345,0,Specific Gravity,NULL,1
+346,0,Spectrometeric Analysis of Low Alloy Steel,NULL,1
+347,0,Spectrometetric Analysis of Stanless Steel,NULL,1
+348,0,Spectrometric Analysis of Aluminium Alloy,NULL,1
+349,0,"Spectrometric Analysis of Copper base Alloy (Brass, Bronze)",NULL,1
+350,0,Spray Rate Tester,NULL,1
+351,0,Spring load test of helical spring,NULL,1
+352,0,Spring Rating Test,NULL,1
+353,0,Spring Universal Testing Machine,NULL,1
+354,0,Stainless Steel,NULL,1
+355,0,STEEL SCALE,NULL,1
+356,0,Stereo Microscope,NULL,1
+357,0,Sulphuric Acid,NULL,1
+358,0,Sushrut-I,NULL,1
+359,0,Swivel Joint test system,NULL,1
+360,0,SYNTHETIC BLOOD PENITRATION TESTER,NULL,1
+361,0,TACHO GENARATOR,NULL,1
+362,0,Tearing Strength Tester,NULL,1
+363,0,Temp: (19-25)?C Humidity: (45-60)%,NULL,1
+364,0,TEMPERATURE AND HUMIDITY METER,NULL,1
+365,0,TEMPERATURE BATH,NULL,1
+366,0,Tensile Test,NULL,1
+367,0,Tensile Test (small diameter or thin sheet samples) of ferrous & non-ferrous metals,NULL,1
+368,0,Tensile Test (with Extensometer) of ferrous & non-ferrous metals,NULL,1
+369,0,Tensile Test (without Extensometer) of ferrous & non-ferrous metals,NULL,1
+370,0,Tensile Test of wires (small diameter) of ferrous & non-ferrous metals,NULL,1
+371,0,TENSILE TESTING MACHINE,NULL,1
+372,0,Tensile testing on Tensometer,NULL,1
+373,0,Tensile testing on UTM,NULL,1
+374,0,Tensometer,NULL,1
+375,0,THERMAL CHAMBER,NULL,1
+376,0,THERMAL CYCLING (6 Cycle ),NULL,1
+377,0,Thermal Profile Test Set-up,NULL,1
+378,0,THERMAL SHOCK,NULL,1
+379,0,Thermal Shock Chamber,NULL,1
+380,0,Thermal Shock Test Chamber,NULL,1
+381,0,Thermo Gravimetric Analyser (TGA),NULL,1
+382,0,Thermogravimetry thermal analysis (TGA),NULL,1
+383,0,Thickness Meter,NULL,1
+384,0,THREE PHASE TEST BENCH,NULL,1
+385,0,TIME INTERVAL METER,NULL,1
+386,0,Tool Steel Alloy Steel,NULL,1
+387,0,Torsion Tester,NULL,1
+388,0,"Total fatty acid , Matter insoluble in alcohol, free caustic alkali, free carbonated alkali",NULL,1
+389,0,TRAVERSE THREAD COUNTER,NULL,1
+390,0,trinoculor vertical metallurgical microscope,NULL,1
+391,0,TWIST TESTER,NULL,1
+392,0,Ultrasonic Flaw Detector,NULL,1
+393,0,Ultrasonic Test Equipment,NULL,1
+394,0,Ultrasonic test PER Square meter,NULL,1
+395,0,Unaided eye or 10X Lens,NULL,1
+396,0,Universal Fatique Testing machine,NULL,1
+397,0,Universal Impact Testing Machine,NULL,1
+398,0,Universal Tensile Testing Machine,NULL,1
+399,0,Universal Tensile Testing Machine & Endurance tester,NULL,1
+400,0,Universal Testing Machine,NULL,1
+401,0,Universal Testing Machine UTM,NULL,1
+402,0,"UNIVERSAL TESTING MACHINE, TENSILE TESTING MACHINE",NULL,1
+403,0,U-NOTCH CHARPY AT THE RATE AMBIENT TO 50 DEGREE,NULL,1
+404,0,UTM,NULL,1
+405,0,UTS,NULL,1
+406,0,UTS. 0.2 % PROOF STRESS. ELONGATION. LOP. REDUCTION OF AREA. YIELD STRESS,NULL,1
+407,0,V NOTCH CHARPY AT AMBIENT TO -40 DEGREE,NULL,1
+408,0,VERNIER CALIPER,NULL,1
+409,0,Vibration Machine,NULL,1
+410,0,VIBRATION SHAKER,NULL,1
+411,0,Vibration Test Machine,NULL,1
+412,0,Vibration Test System,NULL,1
+413,0,Vice,NULL,1
+414,0,Vickers Hardness,NULL,1
+415,0,VICKERS HARDNESS MACHINE,NULL,1
+416,0,Vickers Hardness Test,NULL,1
+417,0,Vickers Hardness Test of ferrous & non-ferrous metals,NULL,1
+418,0,Vickers Hardness Tester,NULL,1
+419,0,Vinbration Test System,NULL,1
+420,0,Visual,NULL,1
+421,0,Water absorption by Cobb tester,NULL,1
+422,0,Water Immersion Test Setup,NULL,1
+423,0,Water Test,NULL,1
+424,0,Weigh Balance &  Specific Gravity Balance,NULL,1
+425,0,WEIGHING BALANCE,NULL,1
+426,0,WEIGHING SCALE,NULL,1
+427,0,Weight in Kg per 10 ltr,NULL,1
+428,0,WEIGHTING BALANCE,NULL,1
+429,0,WEIGHTING BALANCE & STEEL SCALE,NULL,1
+430,0,Wet Analysis testing per element wise,NULL,1
+431,0,Wet Chemical Analysis,NULL,1
+432,0,Wet Chemical Analysis of  Cast Iron,NULL,1
+433,0,WRAP REEL,NULL,1
+434,0,Wrap Reel and Weighing scale,NULL,1
+435,0,"WRAP REEL, ELECTRONIC BALANCE",NULL,1
+436,0,X Ray Machine,NULL,1
+437,0,Xenon Arc Lamp Tester,NULL,1
+438,0,XEOTEST ALPHA+,NULL,1
+439,0,YARN STRENGTH TESTER,NULL,1
+440,0,Yiled Strength,NULL,1
+441,0,Zinc Base Alloy,NULL,1
+442,0,Zinc Stearate,NULL,1
+443,0,1. Specimen cutting (Automatic)   2. Mounting (Automatic) 3. Polsihing (Semi-Automatic) 4. Etching (Manual)  5. Testing using Optical Microscope [Semi-Automatic],NULL,1
+444,0,FOPS (Fall over protective structures) testing of Earthmover equipment cabin as per ISO 3449 or as per customer requirements,NULL,1
+445,227,Micrometers,NULL,NULL
+446,227,Vernier Callipers,NULL,NULL
+447,227,Height Gauges,NULL,NULL
+448,227,Depth Gauges & other measuring instruments,NULL,NULL
+450,229,"CMM, Micrometers, Vernier Callipers, Height Gauges, Depth Gauges & other measuring instruments.",NULL,1
+451,227,OTHERS,NULL,1

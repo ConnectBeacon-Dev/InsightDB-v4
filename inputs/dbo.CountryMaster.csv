@@ -1,0 +1,23 @@
+Id,CountryName,DisplayCountryName,IsActive,CreatedBy,CreatedDate,CreatedByIP,UpdatedBy,UpdatedDate,UpdatedByIP
+1,India,India,1,NULL,57:42.6,NULL,NULL,NULL,NULL
+2,Argentina    ,Argentina  ,1,NULL,07:48.4,NULL,NULL,NULL,NULL
+3,Australia  ,Australia  ,1,NULL,08:07.9,NULL,NULL,NULL,NULL
+4,Austria  ,Austria  ,1,NULL,08:18.8,NULL,NULL,NULL,NULL
+5,Belarus  ,Belarus  ,1,NULL,08:34.8,NULL,NULL,NULL,NULL
+6,Belgium  ,Belgium  ,1,NULL,08:42.4,NULL,NULL,NULL,NULL
+7,Brazil  ,Brazil  ,1,NULL,08:54.7,NULL,NULL,NULL,NULL
+8,Colombia  ,Colombia  ,1,NULL,09:11.9,NULL,NULL,NULL,NULL
+9,Czech Republic  ,Czech Republic  ,1,NULL,09:20.6,NULL,NULL,NULL,NULL
+10,Finland  ,Finland  ,1,NULL,09:33.1,NULL,NULL,NULL,NULL
+11,France  ,France  ,1,NULL,09:39.8,NULL,NULL,NULL,NULL
+12,Georgia  ,Georgia  ,1,NULL,09:53.0,NULL,NULL,NULL,NULL
+13,Germany  ,Germany  ,1,NULL,10:00.5,NULL,NULL,NULL,NULL
+14,Israel,Israel,1,NULL,58:27.8,NULL,NULL,NULL,NULL
+15,Japan,Japan,1,NULL,59:20.4,NULL,NULL,NULL,NULL
+16,South Korea,South Korea,1,NULL,00:15.8,NULL,NULL,NULL,NULL
+17,Singapore,Singapore,1,NULL,01:04.4,NULL,NULL,NULL,NULL
+18,Sweden,Sweden,1,NULL,02:01.9,NULL,NULL,NULL,NULL
+19,Taiwan,Taiwan,1,NULL,02:56.3,NULL,NULL,NULL,NULL
+20,United Kingdom,United Kingdom,1,NULL,03:51.2,NULL,NULL,NULL,NULL
+21,USA,USA,1,NULL,04:31.5,NULL,NULL,NULL,NULL
+22,Hong Kong,Hong Kong,1,NULL,11:25.1,NULL,NULL,NULL,NULL

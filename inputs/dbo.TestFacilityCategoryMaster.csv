@@ -1,0 +1,229 @@
+Id,CategoryName,IsActive
+1,Environmental Testing,1
+2,a)  Ferrous material,1
+3,ambient air monitoring,1
+4,Ammeters (AC/DC),1
+5,As per IS 1089 Conventional Method,1
+6,Auotomotive,1
+7,Automotive,1
+8,b)  Non-Ferrous material,1
+9,Buttons,1
+10,Cables and Wires upto 12 mm dia (Breaking load only),1
+11,CALIBRATION LAB,1
+12,Calibration Of Universal Testing Machines (Tension & Compression Modes),1
+13,Case depth determination by Micro hardness survey per location,1
+14,CATH,1
+15,Charpy impact at Room temperature,1
+16,Charpy impact test at sub zero temperature,1
+17,CHEMICAL,1
+18,Chemical Analysis,1
+19,Chemical analysis by spectrometer,1
+20,Chemical and Mechanical,1
+21,Chemical- metals & alloys,1
+22,Chemical properties,1
+23,Chemical Test,1
+24,Chemical Testing,1
+25,CHEMICAL TESTING LAB,1
+26,CHEMICAL TESTING LABORATORY,1
+27,Chemical testing of Alloy steel,1
+28,Chemical testing of Cast Iron,1
+29,CHEMICAL TESTING OF METALS AND ALLOYS,1
+30,Chemical testing of Stainless Steel,1
+31,CHEMICAL TEXTILE TESTING,1
+32,CHEMICAL- TEXTILE TESTING,1
+33,"Chemical, Mechanical & Non-Destructive Testing",1
+34,CHEMICAL-TEXTILE MATERIALS,1
+35,CHEMICAL-TEXTILE TESTING,1
+36,Classification and Acceptance Performance,1
+37,Coated and Treated Fabrics,1
+38,Coated and Treated Facrics,1
+39,"Combined Altitude, Temperature and Humidity (CATH) Test",1
+40,Computerized Universal Tensile Testing Machine,1
+41,Cordage,1
+42,Cordages,1
+43,Crease Recovery Machine,1
+44,Creep and stress rupture test up to 900 deg. Centigrade,1
+45,De Mattia Flexing Tester,1
+46,Decarburisation test by  a)Micro examination,1
+47,Decarburisation test by  b)Hardness survey method,1
+48,Digital Brinell Hardness Testing Machine,1
+49,Digital Micro Vickers Hardness Testing Machine,1
+50,Digital Rockwell Hardness Testing Machine,1
+51,Durability,1
+52,Electrical : Power Supply Variation  test (9 types),1
+53,ELECTRICAL CHECK,1
+54,Electrical conductivity check by Eddy current,1
+55,Electrical Instrumentation Calibration shop,1
+56,Electrical Test,1
+57,Electronic Spring Testing Machine,1
+58,Electronic Weighing Balance,1
+59,EMC TEST FACILITY,1
+60,Endurance limit of 10^7 cycles (HCF) at elevated temperature.,1
+61,Endurance limit of 10^7 cycles (HCF) at room temperature.,1
+62,ENVIRONMENT LABORATORY,1
+63,Environmental ,1
+64,Environmental Testing,1
+65,"MTD section of VFJ has testing and calibration facilities, environmental conditions of  LAB is being maintained as per relevant testing & calibration standards.",1
+66,ESS TEST,1
+67,ESS Thermal cycling,1
+68,Fabirc (Woven and Non woven),1
+69,Fabric (Woven and Non woven ),1
+70,Fabric (Woven and Non Woven),1
+71,"Fabric (Woven, Non Woven & Knitted)",1
+72,"Fabric (Woven, Non woven and Knitted)",1
+73,"Fabric (Woven, Non-Woven and Knitted)",1
+74,Fabric (Wovenand Non Woven),1
+75,Fabric(Woven andNon Woven),1
+76,"Fabric(Woven, Non Woven & Knitted)",1
+77,"Fabric(Woven, Non Woven and Knitted)",1
+78,Fabrics (Woven and Non Woven),1
+79,Fabrics(Woven and Non Woven,1
+80,Fabrics(Woven and Non woven),1
+81,"Fabrics(Woven, Non Woven & Knitted)",1
+82,"Fabrics(Woven, Non Woven ,Coated and Treated)",1
+83,"Fabrics(Woven, Non Woven and Knitted)",1
+84,"Fabrics(Woven,Non Woven and Knitted)",1
+85,Fastener Hook & Loop,1
+86,Fasteners- Hook and Loop,1
+87,Fasteners-Hook and Loop,1
+88,Fibre Ropes and Cords,1
+89,"Finished Fabric(Woven, Non Woven and Knitted Fabric)",1
+90,Frequency Meters,1
+91,Fused collars and shoulder straps,1
+92,Grain size assessment  (Including sample preparation),1
+93,HDPE Dot Coated Printed Fusible Interlining Fabric,1
+94,Hellical springs (Tension/ Compression),1
+95,Hot Plate,1
+96,Humidity testing,1
+97,Hydraulic hoses,1
+98,Hydraulic oil,1
+99,Hydraulic pump,1
+100,i) Macro Hardness test,1
+101,ii) Micro Hardness test (including specimen mounting and polishing),1
+102,Inclusion rating in steels,1
+103,Indirect Verification  Of  Rockwell Hardness Testers,1
+104,Instrumental analysis,1
+105,Insulation Meters,1
+106,Izod impact at Room temperature,1
+107,Knitted Fabrics,1
+108,LAB CHEMICAL,1
+109,LAB MECHANICAL,1
+110,Labels,1
+111,Laundrometer,1
+112,Macro examination of Forgings for grain flow / Fractographic examination using stereomicroscope,1
+113,Material,1
+114,MATERIAL TESTING,1
+115,Mecahanical Testing,1
+116,MECHANICAL,1
+117,Mechanical Analysis,1
+118,Mechanical properties,1
+119,Mechanical testing,1
+120,Mechanical Testing of Material,1
+121,Mechanical Testing of Metals,1
+122,MECHANICAL TESTING OF METALS AND ALLOYS,1
+123,Mechanical Testing of Steel,1
+124,Mechanical Testing of Steel  and Cast Iron,1
+125,MECHANICAL TETING OF METALS AND ALLOYS,1
+126,MECHANICAL-TEXTILE MATERIALS,1
+127,MECHANICAL-TEXTILE TESTING,1
+128,Mechnical Testing  of Steel and Cast Iron,1
+129,Metal cabin structure,1
+130,Metal structure,1
+131,METALLOGRAPHIC TESTING OF METALS AND ALLOYS,1
+132,METALLOGRAPHICAL TESTING OF METALS AND ALLOYS,1
+133,METALLOGRAPHY,1
+134,Metallography Examination,1
+135,Metallography Examination of Metals,1
+136,Metallography testing,1
+137,Metallography Testing of  Non Ferrous Material,1
+138,Metallography Testing of  Steel,1
+139,Metallography Testing of Cast Iron,1
+140,Metallography Testing of Non Ferrous Material,1
+141,Metallography Testing of Steel,1
+142,Metallurgical consultancy/ Assessment per hour,1
+143,Metallurgical Microscope,1
+144,"Micro examination of metals and alloys (including specimen mounting, polishing , etching etc.,)",1
+145,nan,1
+146,Netting,1
+147,Non Destructive test,1
+148,Non Destructive Testing,1
+149,Non Destructive Testing of Metals,1
+150,Optical,1
+151,Optical Emission Spectrometer,1
+152,Oven & Electronic Weighing Balance,1
+153,Overload Relays for  all Contactors (Thermal & Electonic),1
+154,Packing Boxes,1
+155,Performance,1
+156,Performance Test,1
+157,Perspirometer,1
+158,pH Meter,1
+159,Physical & Wet Chemical analysis,1
+160,Pick Glass,1
+161,Plastic Slide Fasteners,1
+162,Plastic Slide Fastners,1
+163,POT Modules/Process Isolators,1
+164,Press Buttons,1
+165,Pressure Head,1
+166,Quantitative estimate of identifiable micro structural constituents by image analysis system,1
+167,Radiographic Inspection,1
+168,RAIN TEST,1
+169,Reciprocating Movement for Zip,1
+170,SEM/ EDX  i) Fractography with 2 copies of micro/ Fractographs,1
+171,SEM/ EDX  ii) Scanning charges for every additional location/magnification,1
+172,SEM/ EDX  iii) EDX micro analysis,1
+173,SEM/ EDX  iv) Every additional location/magnification in EDX,1
+174,Sewing Thread,1
+175,Sewing Threads,1
+176,Shrinkage Tray,1
+177,Soxhlet apparatus,1
+178,Spectro Chemical Testing of Metals,1
+179,Spray Tester,1
+180,Swivel Joint,1
+181,Tapes,1
+182,Tapes/Netting,1
+183,Tearing Strength Tester,1
+184,Temperature - Thermocouple,1
+185,Temperature Controller with sensors,1
+186,"Temperature Gauges, Indicators, Switches",1
+187,"Temperature Sensors - RTD, Thermistors(NTC)",1
+188,Tensile Test,1
+189,"Tensile testing at room temperature (Proof/yield stress, % Elongation and Reduction in area)",1
+190,Tensile Testing Balance,1
+191,Tensile Testing Machine,1
+192,Testing of Liquid Paint,1
+193,TESTING OF METALS AND ALLOYS,1
+194,Testing of Powder Coating Paint,1
+195,Testing of Rubber Gasket,1
+196,Textile (Woven & Non Woven),1
+197,Textile Coverall,1
+198,Textile Fabrics/Coated Fabrics/Laminated Fabrics/Garments,1
+199,Textile Testing Lab,1
+200,THERMAL CHAMBER,1
+201,THERMAL SHOCK,1
+202,Thermocouple Modules,1
+203,"Threshold relays, Converters & Modules",1
+204,Traverse Thread Counter,1
+205,Twist Tester,1
+206,Ultrasonic Flaw Detection,1
+207,Under/Over Voltage Relays,1
+208,VIBRATION TEST,1
+209,Vibration test facility,1
+210,VIBRATION TESTING,1
+211,Vickers Hardness Tester,1
+212,Voltage/Current/Power modules,1
+213,Voltmeters (AC/DC),1
+214,Wet Chemical Analysis of  Cast Iron,1
+215,Wet Chemical Analysis of  Ferro Silicon,1
+216,Wet Chemical Analysis of  Ferro Vanadium,1
+217,Wet Chemical Analysis of  Iron Ores,1
+218,Wet Chemical Analysis of  Lime Stone,1
+219,Wet Chemical Analysis of  Low Alloy Steel,1
+220,Wet Chemical Analysis of  Magnesite Bricks  or Cement,1
+221,Wet Chemical Analysis of Ferro Chrome LC,1
+222,Wet Chemical Analysis of Ferro Chromium HC,1
+223,Wet Chemical Analysis of Ferro Manganese,1
+224,Wet Chemical Analysis of Flour Spar,1
+225,"Wrap Reel, Weighing balance",1
+226,"Tensile testing at elevated (up to 1000 deg C) temperature (Proof/yield stress, % Elongation and Reduction in area)",1
+227,Metrology Equipment,1
+229,OTHERS,1
