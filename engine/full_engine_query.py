@@ -416,6 +416,8 @@ class EnhancedQueryEngine:
         addr      = pick("Address")
         domain    = pick("IndustryDomain") if "IndustryDomain" in view.columns else pick("Industry")
         subdomain = pick("IndustrySubdomain") if "IndustrySubdomain" in view.columns else ""
+        comp_subcat = pick("CompanySubCategory")  # NEW: Include CompanySubCategory
+        orgtype   = pick("OrgType")
         cert_txt  = ("; " + pick("CertificationType") + " " + pick("Number") + " " + pick("Year")).fillna("")
         fac_txt   = ("; " + pick("FacilityType") + " " + pick("Category") + " " + pick("SubCategory") + " " +
                      pick("FacilityName") + " " + pick("Description") + " " + pick("Equipment") + " " +
@@ -425,6 +427,7 @@ class EnhancedQueryEngine:
         view["search_text"] = (
             (name + " ").str.repeat(3) +  # strong boost
             (domain + " " + subdomain + " ").str.repeat(2) +
+            (comp_subcat + " " + orgtype + " ").str.repeat(2) +  # NEW: Boost CompanySubCategory and OrgType
             (city + " " + state + " " + addr + " ") +
             cert_txt + " " + fac_txt + " " + prod_txt
         ).fillna("").str.replace(r"\s+", " ", regex=True).str.strip()
@@ -456,6 +459,10 @@ class EnhancedQueryEngine:
 
     def _analyze_intent(self, q: str) -> Dict[str, Any]:
         ql = q.lower()
+        
+        # Check for government company queries
+        if re.search(r"\b(government|govt)\b.*\bcompan", ql) or re.search(r"\bcompan.*\b(government|govt)\b", ql):
+            return {"intent": "filter_list", "params": {"filter_type": "government", "field": "subcategory"}}
         
         # Check for list/filter queries
         if re.search(r"\b(list|show|find|get)\b.*(defence|defense)", ql):
@@ -556,7 +563,7 @@ class EnhancedQueryEngine:
                             return "\n".join(lines)
         
         # Default: show top matches
-        cols = [c for c in ["CompanyName","City","State","IndustryDomain"] if c in results.columns]
+        cols = [c for c in ["CompanyName","CompanyRefNo","City","State","IndustryDomain"] if c in results.columns]
         if not cols:
             cols = [c for c in results.columns if c not in ["search_text", "similarity_score"]][:4]
         preview = results.head(10)[cols]
@@ -666,7 +673,7 @@ def _cli():
         # Pretty print summary to console
         print("\n=== ANSWER ===\n" + resp["answer"] + "\n")
         if isinstance(resp["results"], pd.DataFrame) and not resp["results"].empty:
-            cols = [c for c in ["CompanyName","City","State","IndustryDomain","similarity_score"] if c in resp["results"].columns]
+            cols = [c for c in ["CompanyName","CompanyRefNo","City","State","IndustryDomain","similarity_score"] if c in resp["results"].columns]
             print(resp["results"].head(15)[cols].to_string(index=False))
         else:
             print("No rows.")

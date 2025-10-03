@@ -311,35 +311,25 @@ def main():
             }).reset_index()
             df = df.merge(con_agg, on="Id", how="left")
 
-        # --- ensure optional columns exist so projection never KeyErrors ---
-        required_cols = [
-            "Id","Name","LegalName","OrgType","Scale","Address","City","State","CountryName",
-            "Pincode","Lat","Lng","Website","Email","Phone","PAN","CIN","GST","DUNS",
-            "IndustryDomain","IndustrySubdomain","CoreExpertise"
-        ]
-        for col in required_cols:
-            if col not in df.columns:
-                df[col] = None
-
-        out_company = df.rename(columns={
-            "Id": "Id",
+        # --- Include ALL CompanyMaster fields except audit fields and null columns ---
+        # Exclude audit/internal fields
+        exclude_cols = ["CreatedDate", "CreatedBy", "IPAddress", "IsActive", "Final_Submit"]
+        
+        # Rename key columns for clarity
+        df = df.rename(columns={
             "Name": "CompanyName",
-            "LegalName": "LegalName",
-            "Website": "Website",
-            "Email": "Email",
-            "Phone": "Phone",
-            "PAN": "PAN",
-            "CIN": "CIN",
-            "GST": "GST",
-            "DUNS": "DUNS",
             "CountryName": "Country"
-        })[
-            [
-                "Id","CompanyName","LegalName","OrgType","Scale","Address","City","State","Country",
-                "Pincode","Lat","Lng","Website","Email","Phone","PAN","CIN","GST","DUNS",
-                "IndustryDomain","IndustrySubdomain","CoreExpertise"
-            ]
-        ].drop_duplicates()
+        })
+        
+        # Drop completely null columns
+        df = df.dropna(axis=1, how='all')
+        
+        # Drop excluded audit fields
+        for col in exclude_cols:
+            if col in df.columns:
+                df = df.drop(columns=[col])
+        
+        out_company = df.drop_duplicates()
 
         write_csv(out_company, OUT/"CompanyDetail.csv")
 
@@ -578,6 +568,10 @@ def build_enriched_company_view(OUT: Path):
         turnover = pd.read_csv(OUT/"TurnOver.csv", dtype=str).fillna("")
     
     enriched = company.copy()
+    
+    # Ensure IndustryDomain column exists (might not exist if not in original data or joins)
+    if "IndustryDomain" not in enriched.columns:
+        enriched["IndustryDomain"] = ""
     
 # --- INDUSTRY INFERENCE LOGIC ---
     if not products.empty and "CompanyMaster_FK_ID" in products.columns:
