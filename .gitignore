@@ -1,2 +1,4 @@
 __pycache__/*
 query_log.jsonl
+.venv/*
+etl/__pycache__/*

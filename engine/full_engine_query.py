@@ -121,7 +121,7 @@ class EnhancedQueryEngine:
         print(f"✅ Index built: {emb.shape[0]} companies × {emb.shape[1]} dims")
 
     def semantic_search_companies(self, query: str, top_k: int = 20) -> pd.DataFrame:
-        """Search via the prebuilt semantic index; falls back to keyword on errors."""
+        """Search via the prebuilt semantic index with industry-aware weighted scoring."""
         if not TRANSFORMERS_AVAILABLE or np is None:
             print("⚠️  Semantic search unavailable; falling back to keyword contains search.")
             return self._keyword_search(query)
@@ -139,12 +139,14 @@ class EnhancedQueryEngine:
         qv = qv / (np.linalg.norm(qv) + 1e-8)
 
         sims = E @ qv  # cosine since rows are normalized
-        k = max(1, int(top_k))
-        idx = np.argsort(sims)[::-1][:k]
+        
+        # Get more candidates for reranking (top_k * 3 to allow filtering)
+        k_initial = max(50, int(top_k) * 3)
+        idx = np.argsort(sims)[::-1][:k_initial]
         scores = sims[idx]
 
         top = doc_index.iloc[idx].copy()
-        top["similarity_score"] = scores
+        top["base_similarity"] = scores
 
         # Join for display columns from CompanyDetail
         comp = self._load_company_detail()
@@ -158,9 +160,17 @@ class EnhancedQueryEngine:
             res["CompanyName"] = res["CompanyName_y"].fillna(res.get("CompanyName_x", ""))
             res = res.drop(columns=["CompanyName_x", "CompanyName_y"], errors="ignore")
 
-        # Stable ordering
-        order_cols = [c for c in ["similarity_score", "CompanyName"] if c in res.columns]
-        res = res.sort_values(order_cols, ascending=[False] + [True]*(len(order_cols)-1))
+        # Apply industry-aware weighted scoring
+        res = self._apply_weighted_scoring(query, res)
+        
+        # Filter by threshold and take top_k
+        threshold = 0.3  # Minimum weighted score
+        res = res[res["weighted_score"] >= threshold]
+        res = res.nlargest(top_k, "weighted_score")
+        
+        # Keep both scores for transparency
+        res["similarity_score"] = res["weighted_score"]
+
         return res
 
     def natural_language_query(self, question: str, top_k: int = 20) -> Dict[str, Any]:
@@ -249,37 +259,51 @@ class EnhancedQueryEngine:
             filtered = df[mask].head(limit)
             
         elif filter_type == "msme":
-            # Filter for MSME/Small/Medium companies
-            # Check Scale column first
+            # Filter for MSME/Small/Medium companies based on Scale field (NOT company name)
             mask = pd.Series(False, index=df.index)
             
-            if "Scale" in df.columns:
-                mask |= df["Scale"].str.contains("micro|small|medium|msme", case=False, na=False, regex=True)
+            # Priority 1: Use Scale or CompanyScale field (official scale classification)
+            scale_cols = [c for c in ['Scale', 'CompanyScale', 'company_scale'] if c in df.columns]
+            for scale_col in scale_cols:
+                mask |= df[scale_col].str.contains("micro|small|medium", case=False, na=False, regex=True)
             
-            # Also search in CompanyName for these keywords
-            if "CompanyName" in df.columns:
-                mask |= df["CompanyName"].str.contains(r"\b(msme|micro|small|medium)\b", case=False, na=False, regex=True)
+            # Priority 2: If no Scale data, use company_size_category
+            if not mask.any() and 'company_size_category' in df.columns:
+                mask |= df['company_size_category'].str.contains("micro|small|medium", case=False, na=False, regex=True)
             
-            # Search in OrgType
-            if "OrgType" in df.columns:
-                mask |= df["OrgType"].str.contains("micro|small|medium|msme|pvt|private", case=False, na=False, regex=True)
+            # Priority 3: Private/Non-government companies (MSMEs are typically private)
+            # But ONLY if they're not marked as "Large" or "Very Large"
+            if 'is_private_company' in df.columns:
+                private_mask = df['is_private_company'].astype(str).str.lower().isin(['true', '1'])
+                # Exclude Large companies
+                not_large_mask = pd.Series(True, index=df.index)
+                if 'company_size_category' in df.columns:
+                    not_large_mask = ~df['company_size_category'].str.contains("large", case=False, na=False, regex=True)
+                elif 'CompanyScale' in df.columns:
+                    not_large_mask = ~df['CompanyScale'].str.contains("large", case=False, na=False, regex=True)
+                
+                # Combine: private AND not large
+                potential_msme = private_mask & not_large_mask
+                mask |= potential_msme
             
-            # Search in LegalName
-            if "LegalName" in df.columns:
-                mask |= df["LegalName"].str.contains(r"\b(msme|micro|small|medium)\b", case=False, na=False, regex=True)
+            filtered = df[mask].head(limit) if mask.any() else pd.DataFrame()
             
-            filtered = df[mask].head(limit) if mask.any() else df.head(limit)
+            # Log what we found
+            if filtered.empty:
+                print("ℹ️  No MSME companies found based on Scale field. Scale data may not be populated.")
                 
         elif filter_type == "location":
             # Filter by location (city, state, or address)
             location = params.get("value", "").strip()
             if location:
-                mask = (
-                    df["City"].str.contains(location, case=False, na=False, regex=False) |
-                    df["State"].str.contains(location, case=False, na=False, regex=False) |
-                    df["Address"].str.contains(location, case=False, na=False, regex=False)
-                )
-                filtered = df[mask].head(limit)
+                mask = pd.Series(False, index=df.index)
+                if "City" in df.columns:
+                    mask |= df["City"].str.contains(location, case=False, na=False, regex=False)
+                if "State" in df.columns:
+                    mask |= df["State"].str.contains(location, case=False, na=False, regex=False)
+                if "Address" in df.columns:
+                    mask |= df["Address"].str.contains(location, case=False, na=False, regex=False)
+                filtered = df[mask].head(limit) if mask.any() else df.head(limit)
             else:
                 filtered = df.head(limit)
         else:
@@ -337,20 +361,21 @@ class EnhancedQueryEngine:
                 h.update(f"{st.st_mtime_ns}-{st.st_size}".encode("utf-8"))
         return h.hexdigest()[:16]
 
-    def _load_company_detail(self) -> pd.DataFrame:
+    def _load_company_detail(self, nrows: Optional[int] = None) -> pd.DataFrame:
         # Prefer CompanyDetailEnriched.csv (has inferred industries + aggregations)
         # Falls back to CompanyDetail.csv, then dbo.CompanyMaster.csv
+        # nrows parameter: if specified, only read top N rows (useful for large files)
         p_enriched = self.views_dir / "CompanyDetailEnriched.csv"
         if p_enriched.exists():
-            c = pd.read_csv(p_enriched, dtype=str).fillna("")
+            c = pd.read_csv(p_enriched, dtype=str, nrows=nrows).fillna("")
             # CompanyDetailEnriched has many extra columns, but that's fine for our purposes
         else:
             p = self.views_dir / "CompanyDetail.csv"
             if p.exists():
-                c = pd.read_csv(p, dtype=str).fillna("")
+                c = pd.read_csv(p, dtype=str, nrows=nrows).fillna("")
             else:
                 p2 = self.views_dir / "dbo.CompanyMaster.csv"
-                c = pd.read_csv(p2, dtype=str).fillna("") if p2.exists() else pd.DataFrame()
+                c = pd.read_csv(p2, dtype=str, nrows=nrows).fillna("") if p2.exists() else pd.DataFrame()
                 if not c.empty and "Id" not in c.columns and "CompanyID" in c.columns:
                     c = c.rename(columns={"CompanyID": "Id"})
         return c
@@ -378,12 +403,13 @@ class EnhancedQueryEngine:
         files = meta["files"]
         fk = "CompanyMaster_FK_ID"
 
-        def rd_csv(p: Path) -> pd.DataFrame:
-            return pd.read_csv(p, dtype=str).fillna("") if p.exists() else pd.DataFrame()
+        def rd_csv(p: Path, nrows: Optional[int] = None) -> pd.DataFrame:
+            return pd.read_csv(p, dtype=str, nrows=nrows).fillna("") if p.exists() else pd.DataFrame()
 
-        Cert = rd_csv(files["cert"])
-        Fac  = rd_csv(files["fac"])
-        Prod = rd_csv(files["prod"])
+        # For large datasets, limit rows when building index (can be overridden by caller)
+        Cert = rd_csv(files["cert"], nrows=None)
+        Fac  = rd_csv(files["fac"], nrows=None)
+        Prod = rd_csv(files["prod"], nrows=None)
 
         # Normalize FK where necessary
         for df in (Cert, Fac, Prod):
@@ -409,13 +435,14 @@ class EnhancedQueryEngine:
             view = view.merge(prod_agg.rename(columns={fk: "Id"}), on="Id", how="left")
 
         # Weighted search text
-        def pick(col): return view[col].astype(str) if col in view.columns else ""
+        def pick(col): 
+            return view[col].astype(str) if col in view.columns else pd.Series("", index=view.index)
         name      = pick("CompanyName")
         city      = pick("City")
         state     = pick("State")
         addr      = pick("Address")
         domain    = pick("IndustryDomain") if "IndustryDomain" in view.columns else pick("Industry")
-        subdomain = pick("IndustrySubdomain") if "IndustrySubdomain" in view.columns else ""
+        subdomain = pick("IndustrySubdomain") if "IndustrySubdomain" in view.columns else pd.Series("", index=view.index)
         comp_subcat = pick("CompanySubCategory")  # NEW: Include CompanySubCategory
         orgtype   = pick("OrgType")
         cert_txt  = ("; " + pick("CertificationType") + " " + pick("Number") + " " + pick("Year")).fillna("")
@@ -445,6 +472,97 @@ class EnhancedQueryEngine:
 
     # -------------------- Fallbacks & Answers --------------------
 
+    def _apply_weighted_scoring(self, query: str, results: pd.DataFrame) -> pd.DataFrame:
+        """Apply industry-aware weighted scoring with selection reasons"""
+        if results.empty:
+            return results
+        
+        # Extract industry keywords from query
+        industry_keywords = {
+            'electrical': ['Electrical & Electronics'],
+            'electronics': ['Electrical & Electronics'],
+            'pharma': ['Pharmaceuticals'],
+            'pharmaceutical': ['Pharmaceuticals'],
+            'automotive': ['Automotive'],
+            'textile': ['Textiles'],
+            'steel': ['Steel & Metals'],
+            'metal': ['Steel & Metals'],
+            'chemical': ['Chemicals'],
+            'food': ['Food & Beverages'],
+            'software': ['IT & Software'],
+            'it': ['IT & Software'],
+            'defence': ['Aerospace & Defence'],
+            'defense': ['Aerospace & Defence'],
+            'aerospace': ['Aerospace & Defence'],
+            'plastic': ['Plastics'],
+            'machinery': ['Machinery & Equipment'],
+            'construction': ['Construction & Engineering'],
+        }
+        
+        query_lower = query.lower()
+        query_industries = set()
+        for keyword, industries in industry_keywords.items():
+            if keyword in query_lower:
+                query_industries.update(industries)
+        
+        # Extract location keywords
+        location_patterns = [
+            r'\b(pune|mumbai|bangalore|delhi|chennai|hyderabad|kolkata|ahmedabad|bhopal)\b'
+        ]
+        query_locations = set()
+        for pattern in location_patterns:
+            matches = re.findall(pattern, query_lower)
+            query_locations.update(matches)
+        
+        # Calculate weighted scores
+        results['industry_match'] = False
+        results['location_match'] = False
+        results['selection_reason'] = ''
+        
+        for idx in results.index:
+            row = results.loc[idx]
+            base_score = row.get('base_similarity', 0.5)
+            
+            reasons = []
+            bonuses = []
+            
+            # Industry matching (strong signal)
+            if 'IndustryDomain' in row.index and query_industries:
+                domain = str(row['IndustryDomain']).lower()
+                for industry in query_industries:
+                    if industry.lower() in domain:
+                        results.at[idx, 'industry_match'] = True
+                        bonuses.append(0.3)  # Strong boost for industry match
+                        reasons.append(f"Industry match: {row['IndustryDomain']}")
+                        break
+            
+            # Location matching
+            if query_locations:
+                location_found = False
+                for loc in query_locations:
+                    if (('City' in row.index and loc in str(row['City']).lower()) or
+                        ('State' in row.index and loc in str(row['State']).lower()) or
+                        ('Address' in row.index and loc in str(row['Address']).lower())):
+                        results.at[idx, 'location_match'] = True
+                        bonuses.append(0.15)  # Moderate boost for location
+                        reasons.append(f"Location match: {loc}")
+                        location_found = True
+                        break
+            
+            # Base similarity reason
+            if base_score > 0.4:
+                reasons.append(f"Base similarity: {base_score:.3f}")
+            
+            # Calculate final weighted score
+            total_bonus = sum(bonuses)
+            weighted = base_score + total_bonus
+            weighted = min(weighted, 1.0)  # Cap at 1.0
+            
+            results.at[idx, 'weighted_score'] = weighted
+            results.at[idx, 'selection_reason'] = ' | '.join(reasons) if reasons else f"Similarity: {base_score:.3f}"
+        
+        return results
+
     def _keyword_search(self, query: str) -> pd.DataFrame:
         c = self._load_company_detail()
         if c.empty:
@@ -460,27 +578,11 @@ class EnhancedQueryEngine:
     def _analyze_intent(self, q: str) -> Dict[str, Any]:
         ql = q.lower()
         
-        # Check for government company queries
-        if re.search(r"\b(government|govt)\b.*\bcompan", ql) or re.search(r"\bcompan.*\b(government|govt)\b", ql):
-            return {"intent": "filter_list", "params": {"filter_type": "government", "field": "subcategory"}}
-        
-        # Check for list/filter queries
-        if re.search(r"\b(list|show|find|get)\b.*(defence|defense)", ql):
-            return {"intent": "filter_list", "params": {"filter_type": "defence", "field": "domain"}}
-        
-        if re.search(r"\b(msme|micro|small|medium)\b", ql):
-            return {"intent": "filter_list", "params": {"filter_type": "msme", "field": "scale"}}
-        
-        # Check for location-based queries
-        location_match = re.search(r"\b(?:in|from|at|based\s+in)\s+([a-zA-Z\s]+?)(?:\s|$)", ql)
-        if location_match:
-            location = location_match.group(1).strip()
-            # Common words to exclude
-            if location.lower() not in ["india", "the", "a", "an", "all", "any"]:
-                return {"intent": "filter_list", "params": {"filter_type": "location", "field": "location", "value": location}}
-        
-        # Check for attribute queries: "Industry type of COMPANY", "address of COMPANY", etc.
+        # FIRST: Check for attribute queries (company-specific) - highest priority
+        # These should be detected before industry/location checks
         attr_patterns = [
+            (r"(?:contact|phone|email|details?)\s+(?:of|for)\s+(.+)", "contact"),
+            (r"(?:pan|cin|gstin?|registration)\s+(?:of|for)\s+(.+)", "registration"),
             (r"(?:industry\s+type|industry|domain|sector)\s+(?:of|for)\s+(.+)", "industry"),
             (r"(?:address|location)\s+(?:of|for)\s+(.+)", "address"),
             (r"(?:city|state)\s+(?:of|for)\s+(.+)", "location"),
@@ -501,6 +603,40 @@ class EnhancedQueryEngine:
                     company = m.group(1).strip(" ?.," )
                     attr = intent_type
                 return {"intent": "company_attribute", "params": {"company_name": company, "attribute": attr}}
+        
+        # SECOND: Check for industry keywords to determine if this is a combined query
+        industry_keywords = [
+            'electrical', 'electronics', 'pharma', 'pharmaceutical', 'automotive',
+            'textile', 'steel', 'metal', 'chemical', 'food', 'software', 'it',
+            'defence', 'defense', 'aerospace', 'plastic', 'machinery', 'construction'
+        ]
+        has_industry = any(keyword in ql for keyword in industry_keywords)
+        
+        # Check for location keywords
+        location_match = re.search(r"\b(?:in|from|at|based\s+in)\s+([a-zA-Z\s]+?)(?:\s|$)", ql)
+        has_location = location_match is not None
+        
+        # If both industry and location are mentioned, use semantic search (not CSV filter)
+        if has_industry and has_location:
+            return {"intent": "generic", "params": {"industry_filter": True, "location_filter": True}}
+        
+        # Check for government company queries
+        if re.search(r"\b(government|govt)\b.*\bcompan", ql) or re.search(r"\bcompan.*\b(government|govt)\b", ql):
+            return {"intent": "filter_list", "params": {"filter_type": "government", "field": "subcategory"}}
+        
+        # Check for list/filter queries (only if no industry keyword)
+        if re.search(r"\b(list|show|find|get)\b.*(defence|defense)", ql) and not has_industry:
+            return {"intent": "filter_list", "params": {"filter_type": "defence", "field": "domain"}}
+        
+        if re.search(r"\b(msme|micro|small|medium)\b", ql):
+            return {"intent": "filter_list", "params": {"filter_type": "msme", "field": "scale"}}
+        
+        # Location-only queries (no industry keyword)
+        if has_location and not has_industry:
+            location = location_match.group(1).strip()
+            # Common words to exclude
+            if location.lower() not in ["india", "the", "a", "an", "all", "any"]:
+                return {"intent": "filter_list", "params": {"filter_type": "location", "field": "location", "value": location}}
         
         # Generic queries
         return {"intent": "generic", "params": {}}
@@ -523,11 +659,13 @@ class EnhancedQueryEngine:
                     if mask.any():
                         company_row = results[mask].iloc[0]
                         
-                        # Map attribute to column names
+                        # Map attribute to column names (case-sensitive - match actual CSV columns)
                         attr_map = {
+                            "registration": ["Pan", "CIN", "CINNumber", "GSTIN", "GST", "RegistrationDate"],
+                            "contact": ["Phone", "Email", "Website", "POCEmail"],
                             "industry": ["IndustryDomain", "Industry", "Domain", "IndustrySubdomain"],
-                            "address": ["Address", "City", "State"],
-                            "location": ["City", "State", "Address"],
+                            "address": ["Address", "City", "State", "District", "Pincode"],
+                            "location": ["City", "State", "Address", "District", "Pincode"],
                             "products": ["ProductName", "Products"],
                             "certifications": ["CertificationType", "Certifications"],
                             "facilities": ["FacilityType", "FacilityName"],
@@ -563,7 +701,7 @@ class EnhancedQueryEngine:
                             return "\n".join(lines)
         
         # Default: show top matches
-        cols = [c for c in ["CompanyName","CompanyRefNo","City","State","IndustryDomain"] if c in results.columns]
+        cols = [c for c in ["CompanyRefNo","CompanyName","City","State","IndustryDomain"] if c in results.columns]
         if not cols:
             cols = [c for c in results.columns if c not in ["search_text", "similarity_score"]][:4]
         preview = results.head(10)[cols]
@@ -673,7 +811,7 @@ def _cli():
         # Pretty print summary to console
         print("\n=== ANSWER ===\n" + resp["answer"] + "\n")
         if isinstance(resp["results"], pd.DataFrame) and not resp["results"].empty:
-            cols = [c for c in ["CompanyName","CompanyRefNo","City","State","IndustryDomain","similarity_score"] if c in resp["results"].columns]
+            cols = [c for c in ["CompanyRefNo","CompanyName","City","State","IndustryDomain","similarity_score"] if c in resp["results"].columns]
             print(resp["results"].head(15)[cols].to_string(index=False))
         else:
             print("No rows.")
