@@ -195,8 +195,11 @@ class EnhancedQueryEngine:
         # Apply industry-aware weighted scoring
         res = self._apply_weighted_scoring(query, res)
         
+        # Apply product keyword filtering for manufacturing/product queries
+        res = self._apply_product_filter(query, res)
+        
         # Filter by threshold and take top_k
-        threshold = 0.3  # Minimum weighted score
+        threshold = 0.55  # Minimum weighted score (increased from 0.3)
         res = res[res["weighted_score"] >= threshold]
         res = res.nlargest(top_k, "weighted_score")
         
@@ -237,7 +240,7 @@ class EnhancedQueryEngine:
         end_time = datetime.now()
         elapsed = (end_time - start_time).total_seconds()
         
-        # Log the query
+        # Log the query (log ALL results for debugging)
         self._log_query(
             question=question,
             intent=intent,
@@ -245,14 +248,21 @@ class EnhancedQueryEngine:
             answer_method=answer_method,
             results_count=len(results),
             elapsed_time=elapsed,
-            top_results=results.head(10) if not results.empty else pd.DataFrame()
+            top_results=results if not results.empty else pd.DataFrame()
         )
         
         return {"intent": intent, "results": results, "answer": answer, "count": len(results)}
     
     def _lookup_company_by_name(self, company_name: str) -> pd.DataFrame:
-        """Look up a company by exact or close name match"""
-        df = self._load_company_detail()
+        """Look up a company by exact or close name match - uses dbo.CompanyMaster.csv for complete data"""
+        # Use dbo.CompanyMaster.csv which has all columns including GST, CIN, etc.
+        master_path = self.inputs_dir / "dbo.CompanyMaster.csv"
+        if not master_path.exists():
+            # Fallback to CompanyDetail if master not available
+            df = self._load_company_detail()
+        else:
+            df = pd.read_csv(master_path, dtype=str).fillna("")
+        
         if df.empty or not company_name:
             return pd.DataFrame()
         
@@ -627,6 +637,103 @@ class EnhancedQueryEngine:
         
         return results
 
+    def _apply_product_filter(self, query: str, results: pd.DataFrame) -> pd.DataFrame:
+        """
+        Filter results based on actual products from Products.csv.
+        For manufacturing queries (e.g., "drone manufacturing companies"),
+        keep only companies that either:
+        1. Have the product keyword in Products.csv, OR
+        2. Have the product keyword in their CompanyName
+        """
+        if results.empty:
+            return results
+        
+        # Extract product keywords from query
+        manufacturing_keywords = ['manufacturing', 'manufacturer', 'make', 'produce', 'supplier']
+        query_lower = query.lower()
+        
+        # Check if it's a manufacturing/product query
+        is_manufacturing_query = any(keyword in query_lower for keyword in manufacturing_keywords)
+        
+        if not is_manufacturing_query:
+            return results  # Not a product-specific query
+        
+        # Extract the product being asked about
+        # Common patterns: "drone manufacturing", "transformer manufacturer", etc.
+        product_patterns = [
+            r'(\w+)\s+manufactur',
+            r'(\w+)\s+supplier',
+            r'(\w+)\s+maker',
+            r'manufactur.*?(\w+)\s+compan',
+        ]
+        
+        product_keywords = []
+        for pattern in product_patterns:
+            matches = re.findall(pattern, query_lower)
+            product_keywords.extend(matches)
+        
+        # Clean up keywords (remove common words)
+        stopwords = {'the', 'a', 'an', 'of', 'in', 'for', 'and', 'or', 'to', 'from', 'companies', 'company'}
+        product_keywords = [k for k in product_keywords if k not in stopwords and len(k) > 2]
+        
+        if not product_keywords:
+            return results  # Couldn't identify product
+        
+        print(f"ℹ️  Product filter activated for keywords: {product_keywords}")
+        
+        # Load Products.csv
+        products_path = self.views_dir / "Products.csv"
+        if not products_path.exists():
+            print("⚠️  Products.csv not found, skipping product filter")
+            return results
+        
+        try:
+            products_df = pd.read_csv(products_path, dtype=str).fillna("")
+            
+            # Find companies that have matching products
+            companies_with_product = set()
+            for keyword in product_keywords:
+                # Check ProductName and Description
+                mask = (
+                    products_df['ProductName'].str.contains(keyword, case=False, na=False, regex=False) |
+                    (products_df['Description'].str.contains(keyword, case=False, na=False, regex=False) 
+                     if 'Description' in products_df.columns else pd.Series(False, index=products_df.index))
+                )
+                matching_products = products_df[mask]
+                companies_with_product.update(matching_products['CompanyMaster_FK_ID'].unique())
+            
+            print(f"ℹ️  Found {len(companies_with_product)} companies with matching products in Products.csv")
+            
+            # Filter results: Keep companies that either have matching products OR keyword in company name
+            mask = pd.Series(False, index=results.index)
+            
+            for idx in results.index:
+                row = results.loc[idx]
+                company_id = str(row.get('Id', ''))
+                company_name = str(row.get('CompanyName', '')).lower()
+                
+                # Check 1: Company has matching product in Products.csv
+                has_product = company_id in companies_with_product
+                
+                # Check 2: Company name contains the product keyword
+                has_keyword_in_name = any(keyword in company_name for keyword in product_keywords)
+                
+                # Keep if either condition is true
+                if has_product or has_keyword_in_name:
+                    mask.at[idx] = True
+            
+            filtered = results[mask]
+            
+            if not filtered.empty and len(filtered) < len(results):
+                removed = len(results) - len(filtered)
+                print(f"ℹ️  Product filter removed {removed} companies without matching products")
+            
+            return filtered if not filtered.empty else results  # Return original if filter too aggressive
+            
+        except Exception as e:
+            print(f"⚠️  Product filter error: {e}, returning original results")
+            return results
+
     def _keyword_search(self, query: str) -> pd.DataFrame:
         c = self._load_company_detail()
         if c.empty:
@@ -825,12 +932,12 @@ Summary:"""
             "top_results": []
         }
         
-        # Add top results with reasoning
+        # Add ALL results with reasoning (for debugging)
         if not top_results.empty:
             cols_to_log = ["CompanyName", "IndustryDomain", "IndustryDomain_Source", 
                           "City", "State", "ProductNames_Sample"]
             
-            for idx, (_, row) in enumerate(top_results.head(10).iterrows(), 1):
+            for idx, (_, row) in enumerate(top_results.iterrows(), 1):
                 result_entry = {"rank": idx}
                 for col in cols_to_log:
                     if col in row.index:
@@ -893,7 +1000,7 @@ def _cli():
         print("\n=== ANSWER ===\n" + resp["answer"] + "\n")
         if isinstance(resp["results"], pd.DataFrame) and not resp["results"].empty:
             cols = [c for c in ["CompanyRefNo","CompanyName","City","State","IndustryDomain","similarity_score"] if c in resp["results"].columns]
-            print(resp["results"].head(15)[cols].to_string(index=False))
+            print(resp["results"][cols].to_string(index=False))
         else:
             print("No rows.")
         if args.zip_out:
