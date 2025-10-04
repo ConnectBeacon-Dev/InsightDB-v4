@@ -30,6 +30,18 @@ from datetime import datetime
 
 import pandas as pd
 
+# Import the new intent handler
+try:
+    from .intent_handler import IntentHandler
+    INTENT_HANDLER_AVAILABLE = True
+except ImportError:
+    try:
+        from intent_handler import IntentHandler
+        INTENT_HANDLER_AVAILABLE = True
+    except ImportError:
+        INTENT_HANDLER_AVAILABLE = False
+        print("⚠️  IntentHandler not available, using legacy intent detection")
+
 # Optional dependencies
 TRANSFORMERS_AVAILABLE = False
 try:
@@ -53,7 +65,8 @@ class EnhancedQueryEngine:
         views_dir: str = "views",
         model_name: str = "all-MiniLM-L6-v2",    # light, good default
         llm_model_path: Optional[str] = None,     # optional llama.cpp, not required here
-        log_file: str = "query_log.jsonl"        # query logging file
+        log_file: str = "query_log.jsonl",        # query logging file
+        intents_file: str = "intents_reference.json"  # intent patterns reference
     ):
         self.inputs_dir = Path(inputs_dir)
         self.views_dir  = Path(views_dir)
@@ -64,6 +77,9 @@ class EnhancedQueryEngine:
 
         self._embedder_name = model_name
         self._embedder: Optional["SentenceTransformer"] = None  # type: ignore
+        
+        # Load intent patterns from reference file
+        self.intents = self._load_intents(intents_file)
 
         # (Optional) local LLM can be wired later if you want synthesized answers.
         self.llm = None
@@ -74,6 +90,22 @@ class EnhancedQueryEngine:
                 print("✅ LLM loaded for optional answer synthesis.")
             except Exception as e:
                 print(f"⚠️  Could not load LLM: {e}")
+    
+    def _load_intents(self, intents_file: str) -> Dict[str, Any]:
+        """Load intent patterns from JSON reference file"""
+        try:
+            intents_path = Path(intents_file)
+            if intents_path.exists():
+                with open(intents_path, 'r', encoding='utf-8') as f:
+                    intents = json.load(f)
+                print(f"✅ Loaded intent patterns from {intents_file}")
+                return intents
+            else:
+                print(f"⚠️  Intent reference file {intents_file} not found, using default patterns")
+                return {}
+        except Exception as e:
+            print(f"⚠️  Error loading intent patterns: {e}")
+            return {}
 
     # -------------------- Public: Build & Query --------------------
 
@@ -249,7 +281,39 @@ class EnhancedQueryEngine:
         params = intent.get("params", {})
         filter_type = params.get("filter_type", "")
         
-        if filter_type == "defence":
+        if filter_type == "government":
+            # Filter for government companies using CompanySubCategory
+            mask = pd.Series(False, index=df.index)
+            
+            # Primary: Check CompanySubCategory (exclude "Non-government")
+            if "CompanySubCategory" in df.columns:
+                # Match "Union government company" or "State government company" but NOT "Non-government company"
+                is_govt = df["CompanySubCategory"].str.contains("government company", case=False, na=False, regex=False)
+                not_non_govt = ~df["CompanySubCategory"].str.contains("non-government", case=False, na=False, regex=False)
+                mask |= (is_govt & not_non_govt)
+            
+            # Fallback: Check OrgType if available
+            if "OrgType" in df.columns:
+                mask |= df["OrgType"].str.contains("government|public sector|psu", case=False, na=False, regex=True)
+            
+            filtered = df[mask]
+            
+            # If location specified, further filter by State or City
+            location = params.get("value", "").strip()
+            if location and not filtered.empty:
+                location_mask = pd.Series(False, index=filtered.index)
+                if "State" in filtered.columns:
+                    location_mask |= filtered["State"].str.contains(location, case=False, na=False, regex=False)
+                if "City" in filtered.columns:
+                    location_mask |= filtered["City"].str.contains(location, case=False, na=False, regex=False)
+                if "Address" in filtered.columns:
+                    location_mask |= filtered["Address"].str.contains(location, case=False, na=False, regex=False)
+                
+                filtered = filtered[location_mask]
+            
+            return filtered.head(limit) if not filtered.empty else pd.DataFrame()
+            
+        elif filter_type == "defence":
             # Filter for defence/defense companies
             mask = (
                 df["IndustryDomain"].str.contains("defence|defense|military|aerospace", case=False, na=False, regex=True) |
@@ -576,10 +640,18 @@ class EnhancedQueryEngine:
         return c[mask]
 
     def _analyze_intent(self, q: str) -> Dict[str, Any]:
+        """Analyze query intent using IntentHandler if available, otherwise fallback to legacy"""
+        if INTENT_HANDLER_AVAILABLE:
+            try:
+                handler = IntentHandler("intents_reference.json")
+                return handler.analyze_query(q)
+            except Exception as e:
+                print(f"⚠️  IntentHandler failed: {e}, using legacy detection")
+        
+        # Legacy fallback (original code)
         ql = q.lower()
         
         # FIRST: Check for attribute queries (company-specific) - highest priority
-        # These should be detected before industry/location checks
         attr_patterns = [
             (r"(?:contact|phone|email|details?)\s+(?:of|for)\s+(.+)", "contact"),
             (r"(?:pan|cin|gstin?|registration)\s+(?:of|for)\s+(.+)", "registration"),
@@ -604,41 +676,24 @@ class EnhancedQueryEngine:
                     attr = intent_type
                 return {"intent": "company_attribute", "params": {"company_name": company, "attribute": attr}}
         
-        # SECOND: Check for industry keywords to determine if this is a combined query
-        industry_keywords = [
-            'electrical', 'electronics', 'pharma', 'pharmaceutical', 'automotive',
-            'textile', 'steel', 'metal', 'chemical', 'food', 'software', 'it',
-            'defence', 'defense', 'aerospace', 'plastic', 'machinery', 'construction'
-        ]
+        industry_keywords = ['electrical', 'electronics', 'pharma', 'pharmaceutical', 'automotive', 'textile', 'steel', 'metal', 'chemical', 'food', 'software', 'it', 'defence', 'defense', 'aerospace', 'plastic', 'machinery', 'construction']
         has_industry = any(keyword in ql for keyword in industry_keywords)
-        
-        # Check for location keywords
         location_match = re.search(r"\b(?:in|from|at|based\s+in)\s+([a-zA-Z\s]+?)(?:\s|$)", ql)
         has_location = location_match is not None
         
-        # If both industry and location are mentioned, use semantic search (not CSV filter)
         if has_industry and has_location:
             return {"intent": "generic", "params": {"industry_filter": True, "location_filter": True}}
-        
-        # Check for government company queries
         if re.search(r"\b(government|govt)\b.*\bcompan", ql) or re.search(r"\bcompan.*\b(government|govt)\b", ql):
             return {"intent": "filter_list", "params": {"filter_type": "government", "field": "subcategory"}}
-        
-        # Check for list/filter queries (only if no industry keyword)
         if re.search(r"\b(list|show|find|get)\b.*(defence|defense)", ql) and not has_industry:
             return {"intent": "filter_list", "params": {"filter_type": "defence", "field": "domain"}}
-        
         if re.search(r"\b(msme|micro|small|medium)\b", ql):
             return {"intent": "filter_list", "params": {"filter_type": "msme", "field": "scale"}}
-        
-        # Location-only queries (no industry keyword)
         if has_location and not has_industry:
             location = location_match.group(1).strip()
-            # Common words to exclude
             if location.lower() not in ["india", "the", "a", "an", "all", "any"]:
                 return {"intent": "filter_list", "params": {"filter_type": "location", "field": "location", "value": location}}
         
-        # Generic queries
         return {"intent": "generic", "params": {}}
 
     def _generate_answer_simple(self, question: str, results: pd.DataFrame, intent: Dict[str, Any]) -> str:
@@ -661,11 +716,11 @@ class EnhancedQueryEngine:
                         
                         # Map attribute to column names (case-sensitive - match actual CSV columns)
                         attr_map = {
-                            "registration": ["Pan", "CIN", "CINNumber", "GSTIN", "GST", "RegistrationDate"],
-                            "contact": ["Phone", "Email", "Website", "POCEmail"],
+                            "registration": ["Pan", "CIN", "CINNumber", "GSTIN", "GST", "GSTNumber", "RegistrationDate"],
+                            "contact": ["Phone", "EmailId", "Website", "POC_Email"],
                             "industry": ["IndustryDomain", "Industry", "Domain", "IndustrySubdomain"],
-                            "address": ["Address", "City", "State", "District", "Pincode"],
-                            "location": ["City", "State", "Address", "District", "Pincode"],
+                            "address": ["Address", "CityName", "State", "District", "Pincode"],
+                            "location": ["CityName", "State", "Address", "District", "Pincode"],
                             "products": ["ProductName", "Products"],
                             "certifications": ["CertificationType", "Certifications"],
                             "facilities": ["FacilityType", "FacilityName"],
@@ -691,7 +746,7 @@ class EnhancedQueryEngine:
                             lines.append(f"  ⚠️  {attribute.title()} information not available in database")
                             # Show other available fields
                             other_fields = {}
-                            for col in ["City", "State", "Address", "OrgType", "Scale", "CoreExpertise"]:
+                            for col in ["CityName", "State", "Address", "OrgType", "Scale", "CoreExpertise"]:
                                 if col in company_row.index and pd.notna(company_row[col]) and str(company_row[col]).strip():
                                     other_fields[col] = str(company_row[col])
                             if other_fields:
@@ -700,33 +755,59 @@ class EnhancedQueryEngine:
                                     lines.append(f"    {col}: {val}")
                             return "\n".join(lines)
         
-        # Default: show top matches
+        # Default: show ALL matches (not just top 10)
         cols = [c for c in ["CompanyRefNo","CompanyName","City","State","IndustryDomain"] if c in results.columns]
         if not cols:
             cols = [c for c in results.columns if c not in ["search_text", "similarity_score"]][:4]
-        preview = results.head(10)[cols]
-        lines = ["Top matches:"]
-        for _, row in preview.iterrows():
+        
+        # Show all results instead of just top 10
+        lines = [f"Found {len(results)} matching companies:"]
+        for _, row in results[cols].iterrows():
             parts = [f"{c}: {row[c]}" for c in cols if pd.notna(row.get(c)) and str(row[c]).strip()]
             lines.append(" - " + " | ".join(parts))
         return "\n".join(lines)
 
     def _generate_answer_llm(self, question: str, results: pd.DataFrame, intent: Dict[str, Any]) -> str:
-        # Simple prompt grounded on top rows
-        ctx_cols = [c for c in ["CompanyName","City","State","IndustryDomain","Address"] if c in results.columns]
-        ctx = "\n".join(["; ".join(f"{c}: {row[c]}" for c in ctx_cols if pd.notna(row.get(c))) for _, row in results.head(12).iterrows()])
-        prompt = f"""You are a helpful assistant. Using ONLY the data rows below, answer the user briefly.
-User question: {question}
-
-DATA ROWS:
-{ctx}
-
-Answer:"""
-        try:
-            out = self.llm(prompt=prompt, max_tokens=256, temperature=0.2)
-            return out["choices"][0]["text"].strip()
-        except Exception:
+        """Generate answer with brief 2-line LLM summary + full results list"""
+        if not self.llm or results.empty:
             return self._generate_answer_simple(question, results, intent)
+        
+        # Get the simple answer (full list)
+        full_answer = self._generate_answer_simple(question, results, intent)
+        
+        # Create a brief summary from top results for LLM context
+        top_5 = results.head(5)
+        summary_data = []
+        for _, row in top_5.iterrows():
+            company = row.get("CompanyName", "Unknown")
+            state = row.get("State", "")
+            domain = row.get("IndustryDomain", "")
+            summary_data.append(f"{company} ({state}, {domain})")
+        
+        context = " | ".join(summary_data)
+        
+        # Prompt for 2-line summary
+        prompt = f"""Question: {question}
+Found {len(results)} companies. Top companies: {context}
+
+Write ONLY a 2-line summary (max 150 characters total). Be direct and factual.
+Summary:"""
+        
+        try:
+            # Generate brief summary
+            response = self.llm(prompt, max_tokens=100, temperature=0.3, stop=["\n\n", "Question:", "Found:"])
+            summary = response.get("choices", [{}])[0].get("text", "").strip()
+            
+            # Clean up and limit to 2 lines
+            summary_lines = [line.strip() for line in summary.split("\n") if line.strip()][:2]
+            brief_summary = "\n".join(summary_lines)
+            
+            # Combine: LLM summary + full list
+            return f"{brief_summary}\n\n{full_answer}"
+        except Exception as e:
+            print(f"⚠️  LLM summary failed: {e}")
+            # Fallback to simple answer
+            return full_answer
     
     def _log_query(self, question: str, intent: Dict[str, Any], method: str, 
                    answer_method: str, results_count: int, elapsed_time: float,

@@ -130,20 +130,8 @@ def _format_answer(response: dict) -> str:
     results = response.get("results")
     count = response.get("count", 0)
     
-    output = f"=== ANSWER ===\n\n{answer}\n"
-    
-    # Add results summary if available
-    if results is not None and not results.empty and count > 0:
-        output += f"\n\n=== TOP RESULTS ({min(10, count)} of {count}) ===\n\n"
-        
-        display_cols = [c for c in ["CompanyName", "City", "State", "IndustryDomain"] 
-                       if c in results.columns]
-        
-        for idx, (_, row) in enumerate(results.head(10).iterrows(), 1):
-            parts = [f"{c}: {row[c]}" for c in display_cols 
-                    if c in row.index and str(row[c]).strip()]
-            if parts:
-                output += f"{idx}. {' | '.join(parts)}\n"
+    # Simple format - just answer
+    output = f"{answer}"
     
     return output
 
@@ -153,8 +141,6 @@ def _sse_token(chunk: str) -> str:
 
 def _stream_smalltalk(msg: str):
     """Stream a smalltalk/off-topic reply using the same SSE protocol."""
-    #prefix = "=== ANSWER ===\n\n"
-    #payload = prefix + msg
     CHUNK = 200
     for i in range(0, len(msg), CHUNK):
         yield _sse_token(msg[i:i+CHUNK])
@@ -212,8 +198,7 @@ def ask_once():
     # Smalltalk/off-topic quick replies (no query engine call)
     st = _smalltalk_or_offtopic(q)
     if st:
-        ans = "=== ANSWER ===\n\n" + st
-        return jsonify({"status": "success", "answer": ans})
+        return jsonify({"status": "success", "answer": st})
 
     try:
         response = _run_query(q, k)

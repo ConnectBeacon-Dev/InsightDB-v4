@@ -1,0 +1,342 @@
+{
+  "version": "1.0",
+  "description": "Comprehensive intent patterns for company queries based on ETL classifications",
+  "last_updated": "2025-10-04",
+  
+  "classification_based_intents": {
+    "ownership_type": {
+      "description": "Queries about company ownership using ETL classification: is_government_company, is_private_company",
+      "patterns": [
+        {
+          "keywords": ["government company", "govt company", "public sector", "PSU"],
+          "filter_type": "government",
+          "etl_column": "is_government_company",
+          "examples": [
+            "Government companies in Karnataka",
+            "List of PSUs in India",
+            "Public sector companies in Mumbai"
+          ]
+        },
+        {
+          "keywords": ["union government", "central government", "central PSU"],
+          "filter_type": "union_government",
+          "etl_column": "is_union_government",
+          "examples": [
+            "Union government companies",
+            "Central government PSUs in Delhi"
+          ]
+        },
+        {
+          "keywords": ["state government", "state PSU"],
+          "filter_type": "state_government",
+          "etl_column": "is_state_government",
+          "examples": [
+            "State government companies in Karnataka",
+            "State PSUs"
+          ]
+        },
+        {
+          "keywords": ["private company", "private sector"],
+          "filter_type": "private",
+          "etl_column": "is_private_company",
+          "examples": [
+            "Private companies in Bangalore",
+            "Private sector companies"
+          ]
+        }
+      ]
+    },
+    
+    "company_size": {
+      "description": "Queries about company size using ETL classifications: is_msme, company_size_category",
+      "patterns": [
+        {
+          "keywords": ["MSME", "micro small medium", "SME"],
+          "filter_type": "msme",
+          "etl_column": "is_msme",
+          "examples": [
+            "MSME companies in Pune",
+            "List of MSMEs in India",
+            "Small and medium enterprises"
+          ]
+        },
+        {
+          "keywords": ["micro enterprise", "micro company"],
+          "filter_type": "company_size",
+          "size_value": "Micro",
+          "etl_column": "company_size_category",
+          "examples": ["Micro companies in Delhi"]
+        },
+        {
+          "keywords": ["small enterprise", "small company"],
+          "filter_type": "company_size",
+          "size_value": "Small",
+          "etl_column": "company_size_category",
+          "examples": ["Small companies in Maharashtra"]
+        },
+        {
+          "keywords": ["medium enterprise", "medium company"],
+          "filter_type": "company_size",
+          "size_value": "Medium",
+          "etl_column": "company_size_category",
+          "examples": ["Medium scale companies"]
+        },
+        {
+          "keywords": ["large company", "large enterprise"],
+          "filter_type": "company_size",
+          "size_value": "Large",
+          "etl_column": "company_size_category",
+          "examples": ["Large companies in India"]
+        }
+      ]
+    },
+    
+    "listing_status": {
+      "description": "Queries about stock listing using ETL classification: is_listed_company",
+      "patterns": [
+        {
+          "keywords": ["listed company", "publicly traded", "stock listed"],
+          "filter_type": "listed",
+          "etl_column": "is_listed_company",
+          "examples": [
+            "Listed companies in India",
+            "Publicly traded companies in Mumbai"
+          ]
+        }
+      ]
+    },
+    
+    "company_status": {
+      "description": "Queries about company active status using ETL classification: is_active_company",
+      "patterns": [
+        {
+          "keywords": ["active company"],
+          "filter_type": "active",
+          "etl_column": "is_active_company",
+          "examples": ["Active companies in Karnataka"]
+        }
+      ]
+    },
+    
+    "industry_domain": {
+      "description": "Queries about industry sectors using ETL classification: IndustryDomain, is_defence_company",
+      "patterns": [
+        {
+          "keywords": ["defence company", "defense company", "aerospace", "military"],
+          "filter_type": "defence",
+          "etl_column": "is_defence_company",
+          "industry_value": "Aerospace & Defence",
+          "examples": [
+            "Defence companies in India",
+            "Aerospace companies in Bangalore"
+          ]
+        },
+        {
+          "keywords": ["electrical company", "electronics company", "electrical electronics"],
+          "filter_type": "industry",
+          "industry_value": "Electrical & Electronics",
+          "etl_column": "IndustryDomain",
+          "examples": ["Electrical companies in Pune"]
+        },
+        {
+          "keywords": ["pharma", "pharmaceutical", "drug company"],
+          "filter_type": "industry",
+          "industry_value": "Pharmaceuticals",
+          "etl_column": "IndustryDomain",
+          "examples": ["Pharmaceutical companies in Hyderabad"]
+        },
+        {
+          "keywords": ["automotive", "automobile", "vehicle"],
+          "filter_type": "industry",
+          "industry_value": "Automotive",
+          "etl_column": "IndustryDomain",
+          "examples": ["Automotive companies in Chennai"]
+        },
+        {
+          "keywords": ["textile", "garment", "fabric"],
+          "filter_type": "industry",
+          "industry_value": "Textiles",
+          "etl_column": "IndustryDomain",
+          "examples": ["Textile companies in Coimbatore"]
+        },
+        {
+          "keywords": ["steel", "metal", "iron"],
+          "filter_type": "industry",
+          "industry_value": "Steel & Metals",
+          "etl_column": "IndustryDomain",
+          "examples": ["Steel companies in Jamshedpur"]
+        },
+        {
+          "keywords": ["chemical", "polymer"],
+          "filter_type": "industry",
+          "industry_value": "Chemicals",
+          "etl_column": "IndustryDomain",
+          "examples": ["Chemical companies in Gujarat"]
+        },
+        {
+          "keywords": ["food", "beverage", "dairy"],
+          "filter_type": "industry",
+          "industry_value": "Food & Beverages",
+          "etl_column": "IndustryDomain",
+          "examples": ["Food companies in India"]
+        },
+        {
+          "keywords": ["software", "IT", "technology", "digital"],
+          "filter_type": "industry",
+          "industry_value": "IT & Software",
+          "etl_column": "IndustryDomain",
+          "examples": ["IT companies in Bangalore"]
+        },
+        {
+          "keywords": ["construction", "infrastructure", "engineering"],
+          "filter_type": "industry",
+          "industry_value": "Construction & Engineering",
+          "etl_column": "IndustryDomain",
+          "examples": ["Construction companies in Delhi"]
+        },
+        {
+          "keywords": ["machinery", "equipment"],
+          "filter_type": "industry",
+          "industry_value": "Machinery & Equipment",
+          "etl_column": "IndustryDomain",
+          "examples": ["Machinery companies in Pune"]
+        },
+        {
+          "keywords": ["plastic", "polymer"],
+          "filter_type": "industry",
+          "industry_value": "Plastics",
+          "etl_column": "IndustryDomain",
+          "examples": ["Plastic companies in Mumbai"]
+        }
+      ]
+    }
+  },
+  
+  "attribute_queries": {
+    "description": "Queries asking for specific company attributes",
+    "patterns": [
+      {
+        "attribute": "address",
+        "keywords": ["address of", "location of", "where is"],
+        "etl_columns": ["Address", "City", "State", "District", "Pincode"],
+        "examples": ["Address of HEG LIMITED", "Where is Tata Steel located"]
+      },
+      {
+        "attribute": "contact",
+        "keywords": ["contact", "phone", "email", "website"],
+        "etl_columns": ["Phone", "Email", "Website", "POCEmail"],
+        "examples": ["Contact details of BHEL", "Phone number of Infosys"]
+      },
+      {
+        "attribute": "registration",
+        "keywords": ["PAN", "CIN", "GST", "GSTIN", "registration"],
+        "etl_columns": ["Pan", "CIN", "CINNumber", "GSTIN", "GST"],
+        "examples": ["PAN of Reliance", "CIN number of TCS", "GST Number of company"]
+      },
+      {
+        "attribute": "industry",
+        "keywords": ["industry type", "sector", "domain"],
+        "etl_columns": ["IndustryDomain", "IndustrySubdomain"],
+        "examples": ["Industry type of Wipro", "What sector is HDFC in"]
+      },
+      {
+        "attribute": "products",
+        "keywords": ["products", "services", "what does"],
+        "etl_columns": ["ProductName", "Products"],
+        "examples": ["Products of Larsen & Toubro", "What does Mahindra make"]
+      },
+      {
+        "attribute": "certifications",
+        "keywords": ["certifications", "ISO", "certified"],
+        "etl_columns": ["CertificationType", "Certifications"],
+        "examples": ["Certifications of Godrej", "Is Maruti ISO certified"]
+      },
+      {
+        "attribute": "facilities",
+        "keywords": ["facilities", "plants", "factories"],
+        "etl_columns": ["FacilityType", "FacilityName"],
+        "examples": ["Facilities of Tata Motors", "Manufacturing plants"]
+      },
+      {
+        "attribute": "turnover",
+        "keywords": ["turnover", "revenue", "sales"],
+        "etl_columns": ["TurnOver", "Revenue"],
+        "examples": ["Turnover of Infosys", "Revenue of TCS"]
+      }
+    ]
+  },
+  
+  "location_filters": {
+    "description": "Location-based filtering (State, City)",
+    "major_states": [
+      "Maharashtra", "Karnataka", "Tamil Nadu", "Gujarat", "Delhi", 
+      "Telangana", "Uttar Pradesh", "West Bengal", "Rajasthan", 
+      "Madhya Pradesh", "Kerala", "Punjab", "Haryana", "Andhra Pradesh"
+    ],
+    "major_cities": [
+      "Mumbai", "Bangalore", "Delhi", "Chennai", "Hyderabad", "Pune", 
+      "Kolkata", "Ahmedabad", "Surat", "Jaipur", "Lucknow", "Kanpur",
+      "Nagpur", "Indore", "Thane", "Bhopal", "Visakhapatnam", "Vadodara"
+    ],
+    "pattern": "\\b(?:in|from|at|based in)\\s+([a-zA-Z\\s]+)",
+    "examples": [
+      "Companies in Bangalore",
+      "IT companies in Pune",
+      "Government companies in Karnataka"
+    ]
+  },
+  
+  "combined_filters": {
+    "description": "Queries combining multiple filters",
+    "examples": [
+      {
+        "query": "Government companies in Karnataka",
+        "filters": ["ownership_type=government", "location=Karnataka"],
+        "etl_columns": ["is_government_company", "State"]
+      },
+      {
+        "query": "Listed IT companies in Bangalore",
+        "filters": ["listing_status=listed", "industry=IT & Software", "location=Bangalore"],
+        "etl_columns": ["is_listed_company", "IndustryDomain", "City"]
+      },
+      {
+        "query": "MSME electrical companies in Maharashtra",
+        "filters": ["size=msme", "industry=Electrical & Electronics", "location=Maharashtra"],
+        "etl_columns": ["is_msme", "IndustryDomain", "State"]
+      },
+      {
+        "query": "Private defence companies",
+        "filters": ["ownership=private", "industry=defence"],
+        "etl_columns": ["is_private_company", "is_defence_company"]
+      }
+    ]
+  },
+  
+  "query_templates": {
+    "description": "Common query templates users might ask",
+    "list_queries": [
+      "List of {filter_type} companies",
+      "Show me {filter_type} companies",
+      "Get all {filter_type} companies in {location}",
+      "How many {filter_type} companies in {location}",
+      "Find {filter_type} companies"
+    ],
+    "count_queries": [
+      "How many {filter_type} companies",
+      "Count of {filter_type} companies in {location}",
+      "Number of companies in {location}"
+    ],
+    "attribute_queries": [
+      "{attribute} of {company_name}",
+      "What is the {attribute} of {company_name}",
+      "Show me {attribute} for {company_name}"
+    ]
+  },
+  
+  "notes": {
+    "priority": "Always prefer ETL-generated boolean columns over runtime keyword matching",
+    "performance": "Pre-classified data enables instant filtering without semantic search",
+    "extensibility": "Add new intents by updating ETL classifications in add_classifications.py",
+    "accuracy": "ETL uses comprehensive data analysis (HSN codes, products, facilities) for classification"
+  }
+}
