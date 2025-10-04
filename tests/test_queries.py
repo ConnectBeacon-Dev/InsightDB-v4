@@ -77,7 +77,7 @@ def main():
     print("="*80)
     
     # Initialize engine with Qwen LLM
-    LLM_PATH = r"D:\CBDPIT\TEMP6\Qwen2.5-3B-Instruct-Q8_0.gguf"
+    LLM_PATH = r"models\Qwen2.5-3B-Instruct-Q8_0.gguf"
     print(f"\nInitializing query engine with Qwen2.5-3B LLM...")
     print(f"LLM Path: {LLM_PATH}")
     

@@ -26,7 +26,7 @@ STATIC_DIR = APP_DIR / "static"
 
 # Updated paths for new query engine
 VIEWS_DIR = Path(os.getenv("VIEWS_DIR", APP_DIR / "views"))
-LLM_PATH = Path(os.getenv("LLM_MODEL", r"D:\CBDPIT\TEMP6\Qwen2.5-3B-Instruct-Q8_0.gguf"))
+LLM_PATH = Path(os.getenv("LLM_MODEL", "models/Qwen2.5-3B-Instruct-Q8_0.gguf"))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 DEFAULT_K = int(os.getenv("RAG_K", "20"))
 
