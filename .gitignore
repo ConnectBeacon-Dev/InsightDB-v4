@@ -3,3 +3,5 @@ query_log.jsonl
 .venv/*
 etl/__pycache__/*
 *pyc
+models/Qwen2.5-3B-Instruct-Q8_0.gguf
+views/*
