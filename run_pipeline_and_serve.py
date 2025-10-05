@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 
 import sys
 import os
@@ -49,7 +50,6 @@ Defaults:
   --tmp-dir .tmp
 """
 
-from __future__ import annotations
 
 import argparse
 import os
