@@ -168,6 +168,14 @@ def chat_page():
         return send_from_directory(p.parent, p.name)
     abort(404, description="index.html not found. Place it under ./templates or alongside the app.")
 
+@app.route("/favicon.ico")
+def favicon():
+    """Serve favicon at root level (browsers automatically request this)"""
+    favicon_path = STATIC_DIR / "favicon.ico"
+    if favicon_path.exists():
+        return send_from_directory(STATIC_DIR, "favicon.ico", mimetype="image/x-icon")
+    abort(404)
+
 @app.route("/static/<path:filename>")
 def static_fallback(filename: str):
     try:
