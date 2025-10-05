@@ -96,14 +96,20 @@ D:\CBDPIT\TEMP6\Qwen2.5-3B-Instruct-Q8_0.gguf
 ## Step 5: Configure for Offline Use
 
 ### Update Model Path in Code:
-The system automatically uses local models when available.
+The system automatically uses local models directory by default.
 
-For embedding model:
+**Default Configuration** (already set in code):
+- Embedding model: `models/all-MiniLM-L6-v2` (local path)
+- All files now default to reading from the local models directory
+- No code changes needed for offline operation
+
+Example usage:
 ```python
-# In full_engine_query.py or test_queries.py
+# In full_engine_query.py, app_rag_chat.py, etl/llm_classifier.py, tests/test_queries.py
+# These files already use the local models directory by default:
 engine = EnhancedQueryEngine(
     views_dir="views",
-    model_name="models/all-MiniLM-L6-v2",  # Local path
+    model_name="models/all-MiniLM-L6-v2",  # Local path (DEFAULT)
     llm_model_path=r"D:\CBDPIT\TEMP6\Qwen2.5-3B-Instruct-Q8_0.gguf"
 )
 ```

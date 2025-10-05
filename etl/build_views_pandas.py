@@ -163,13 +163,13 @@ def _apply_field_selection(df: pd.DataFrame, logical_name: str) -> pd.DataFrame:
             keep.add(k)
 
     if not keep:
-        print(f"⚠️  Field selection for '{logical_name}' matched nothing; leaving columns unchanged.")
+        print(f"  Field selection for '{logical_name}' matched nothing; leaving columns unchanged.")
         return df
 
     ordered = [c for c in df.columns if c in keep]
     missing = [w for w in wanted if w.lower() not in existing_lower]
     if missing:
-        print(f"ℹ️  '{logical_name}': missing requested columns skipped: {missing[:6]}{' ...' if len(missing)>6 else ''}")
+        print(f"ℹ  '{logical_name}': missing requested columns skipped: {missing[:6]}{' ...' if len(missing)>6 else ''}")
     return df[ordered]
 
 
@@ -339,7 +339,7 @@ def build_company_detail(inputs: Path) -> pd.DataFrame:
         "CompanyMaster.csv",
     ])
     if not p:
-        raise SystemExit("❌ Could not find CompanyDetail / CompanyMaster CSV in inputs.")
+        raise SystemExit(" Could not find CompanyDetail / CompanyMaster CSV in inputs.")
     df = _read_csv(p)
     df = _ensure_id(df)
     
@@ -715,7 +715,7 @@ def main():
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"• Wrote {cfg_path}")
 
-    print("\n✅ Done. Views written to:", OUT.resolve())
+    print("\n Done. Views written to:", OUT.resolve())
 
 if __name__ == "__main__":
     try:

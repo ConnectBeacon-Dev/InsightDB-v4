@@ -27,7 +27,7 @@ STATIC_DIR = APP_DIR / "static"
 # Updated paths for new query engine
 VIEWS_DIR = Path(os.getenv("VIEWS_DIR", APP_DIR / "views"))
 LLM_PATH = Path(os.getenv("LLM_MODEL", "models/Qwen2.5-3B-Instruct-Q8_0.gguf"))
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/all-MiniLM-L6-v2")
 DEFAULT_K = int(os.getenv("RAG_K", "20"))
 
 # Initialize query engine (singleton for the app)
@@ -48,7 +48,7 @@ def get_query_engine():
         )
         # Build index on startup
         _query_engine.build_semantic_index(force=False)
-        print("✅ Query engine ready")
+        print(" Query engine ready")
     return _query_engine
 
 # =========================== General helpers =========================
@@ -67,7 +67,7 @@ _OFFTOPIC_PATTERNS = [
 _OFFTOPIC_RE = re.compile("|".join(_OFFTOPIC_PATTERNS), re.I)
 
 _GREETINGS = [
-    "Hello! 👋 How can I help you with companies, products, or certifications?",
+    "Hello!  How can I help you with companies, products, or certifications?",
     "Hi! Ask me about companies (location, domain), ISO certifications, products, or revenue.",
     "Namaste! You can search by certification (e.g., ISO 9001), product (e.g., High Voltage Transformer), or turnover."
 ]
@@ -79,7 +79,7 @@ def _smalltalk_or_offtopic(q: str) -> str | None:
     if _THANKS_RE.search(q):
         return "You're welcome! If you’d like, ask me about company locations, products, or certifications."
     if _BYE_RE.search(q):
-        return "Take care! 👋 Come back anytime if you need company details or lists."
+        return "Take care!  Come back anytime if you need company details or lists."
     if _HELP_RE.search(q):
         return (
             "I can help you find company details by name, city, state, products, or certifications.\n\n"

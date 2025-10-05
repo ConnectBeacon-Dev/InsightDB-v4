@@ -80,9 +80,9 @@ class LLMIndustryClassifier:
     Fast, accurate, and works with minimal data
     """
     
-    def __init__(self, model_name='all-MiniLM-L6-v2'):
+    def __init__(self, model_name='models/all-MiniLM-L6-v2'):
         """Initialize with the sentence transformer model"""
-        print(f"     🤖 Loading LLM classifier: {model_name}...")
+        print(f"      Loading LLM classifier: {model_name}...")
         self.model = SentenceTransformer(model_name)
         
         # Pre-compute embeddings for industry descriptions
@@ -93,7 +93,7 @@ class LLMIndustryClassifier:
             # Average them for a robust industry representation
             self.industry_embeddings[industry] = np.mean(embeddings, axis=0)
         
-        print(f"     ✅ LLM classifier ready with {len(self.industry_embeddings)} industries")
+        print(f"      LLM classifier ready with {len(self.industry_embeddings)} industries")
     
     def classify_company(
         self, 

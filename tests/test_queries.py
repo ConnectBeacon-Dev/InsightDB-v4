@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import sys
+import os
+
+# Fix encoding for Windows console (must be before any other imports)
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+
 """
 Test queries for the enhanced query engine with Qwen LLM
 Comprehensive test suite covering:
@@ -28,7 +40,7 @@ os.environ['LLAMA_LOG_LEVEL'] = '0'  # Suppress llama.cpp verbose output
 def run_test_query(engine, query_name, query_text, top_k=20):
     """Run a test query and display results with clean formatting"""
     print(f"\n{'='*80}")
-    print(f"🔍 {query_name}")
+    print(f" {query_name}")
     print(f"{'='*80}")
     print(f"Question: {query_text}\n")
     
@@ -40,7 +52,7 @@ def run_test_query(engine, query_name, query_text, top_k=20):
     
     # Display LLM-generated answer with timing
     print(f"\n{'='*80}")
-    print(f"🤖 QWEN LLM ANSWER (⏱️ {elapsed_time:.2f}s)")
+    print(f" QWEN LLM ANSWER (⏱ {elapsed_time:.2f}s)")
     print(f"{'='*80}")
     print(response["answer"])
     
@@ -48,7 +60,7 @@ def run_test_query(engine, query_name, query_text, top_k=20):
     results = response["results"]
     if not results.empty:
         print(f"\n{'='*80}")
-        print(f"📊 TOP {min(10, len(results))} MATCHING COMPANIES")
+        print(f" TOP {min(10, len(results))} MATCHING COMPANIES")
         print(f"{'='*80}\n")
         
         # Select display columns (no similarity_score for cleaner display)
@@ -62,14 +74,14 @@ def run_test_query(engine, query_name, query_text, top_k=20):
             domain = row.get("IndustryDomain", "")
             
             print(f"{idx:2d}. {name}")
-            print(f"    📍 {state}")
+            print(f"     {state}")
             if domain:
-                print(f"    🏭 {domain}")
+                print(f"     {domain}")
             print()
         
-        print(f"✅ Total found: {len(results)} companies\n")
+        print(f" Total found: {len(results)} companies\n")
     else:
-        print("\n❌ No results found.\n")
+        print("\n No results found.\n")
 
 def main():
     print("="*80)
@@ -87,7 +99,7 @@ def main():
     
     engine = EnhancedQueryEngine(
         views_dir="views", 
-        model_name="all-MiniLM-L6-v2",
+        model_name="models/all-MiniLM-L6-v2",
         llm_model_path=LLM_PATH
     )
     
@@ -97,7 +109,7 @@ def main():
     
     # Category 1: Filter Queries
     print("\n" + "="*80)
-    print("📂 CATEGORY 1: FILTER QUERIES")
+    print(" CATEGORY 1: FILTER QUERIES")
     print("="*80)
     
     run_test_query(
@@ -123,7 +135,7 @@ def main():
     
     # Category 2: Certification Queries
     print("\n" + "="*80)
-    print("🏆 CATEGORY 2: CERTIFICATION QUERIES")
+    print(" CATEGORY 2: CERTIFICATION QUERIES")
     print("="*80)
     
     run_test_query(
@@ -135,7 +147,7 @@ def main():
     
     # Category 3: Company Attribute Queries
     print("\n" + "="*80)
-    print("🏢 CATEGORY 3: COMPANY ATTRIBUTE QUERIES")
+    print(" CATEGORY 3: COMPANY ATTRIBUTE QUERIES")
     print("="*80)
     
     run_test_query(
@@ -168,7 +180,7 @@ def main():
     
     # Category 4: Product-Based Queries
     print("\n" + "="*80)
-    print("📦 CATEGORY 4: PRODUCT-BASED QUERIES")
+    print(" CATEGORY 4: PRODUCT-BASED QUERIES")
     print("="*80)
     
     run_test_query(
@@ -187,7 +199,7 @@ def main():
     
     # Category 5: Industry-Specific Queries
     print("\n" + "="*80)
-    print("🏭 CATEGORY 5: INDUSTRY-SPECIFIC QUERIES")
+    print(" CATEGORY 5: INDUSTRY-SPECIFIC QUERIES")
     print("="*80)
     
     run_test_query(
@@ -205,10 +217,10 @@ def main():
     )
     
     print("\n" + "="*80)
-    print("✅ ALL TEST QUERIES COMPLETE")
+    print(" ALL TEST QUERIES COMPLETE")
     print("="*80)
-    print(f"\n📊 Total Queries Tested: 12")
-    print("📁 Query log saved to: query_log.jsonl")
+    print(f"\n Total Queries Tested: 12")
+    print(" Query log saved to: query_log.jsonl")
     print("\nCategories Covered:")
     print("  • Filter Queries (3)")
     print("  • Certification Queries (1)")

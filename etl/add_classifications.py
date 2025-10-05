@@ -150,7 +150,7 @@ def _infer_industry_domain(df: pd.DataFrame, inputs_dir: str = 'inputs') -> pd.D
     }
     
     # Step 0: Check known major companies (highest confidence)
-    print("     🔍 Checking known major companies...")
+    print("      Checking known major companies...")
     if 'CompanyName' in df.columns:
         for idx, row in df[df['IndustryDomain'].isin(['', 'Other'])].iterrows():
             known_industry = check_known_company(row['CompanyName'])
@@ -158,7 +158,7 @@ def _infer_industry_domain(df: pd.DataFrame, inputs_dir: str = 'inputs') -> pd.D
                 df.at[idx, 'IndustryDomain'] = known_industry
     
     # Step 0.5: HSN Code-based classification (very high confidence)
-    print("     🔍 Analyzing HSN codes from products for industry classification...")
+    print("      Analyzing HSN codes from products for industry classification...")
     try:
         products_path = Path(inputs_dir) / 'dbo.CompanyProducts.csv'
         if products_path.exists():
@@ -197,13 +197,13 @@ def _infer_industry_domain(df: pd.DataFrame, inputs_dir: str = 'inputs') -> pd.D
                             hsn_count += 1
                 
                 if hsn_count > 0:
-                    print(f"     ✅ Classified {hsn_count} companies using HSN codes")
+                    print(f"      Classified {hsn_count} companies using HSN codes")
                 else:
-                    print(f"     ℹ️  HSN codes analyzed but no new classifications (companies may already be classified)")
+                    print(f"     ℹ  HSN codes analyzed but no new classifications (companies may already be classified)")
     except Exception as e:
-        print(f"     ⚠️  Could not analyze HSN codes: {e}")
+        print(f"       Could not analyze HSN codes: {e}")
     
-    print("     🔍 Analyzing company names for industry classification...")
+    print("      Analyzing company names for industry classification...")
     # Step 1: Check company name
     if 'CompanyName' in df.columns:
         for industry, patterns in industry_patterns.items():
@@ -213,7 +213,7 @@ def _infer_industry_domain(df: pd.DataFrame, inputs_dir: str = 'inputs') -> pd.D
                 if count > 0:
                     df.loc[mask, 'IndustryDomain'] = industry
     
-    print("     🔍 Analyzing products data for industry classification...")
+    print("      Analyzing products data for industry classification...")
     # Step 2: Load and analyze Products data
     try:
         products_path = Path(inputs_dir) / 'dbo.CompanyProducts.csv'
@@ -248,11 +248,11 @@ def _infer_industry_domain(df: pd.DataFrame, inputs_dir: str = 'inputs') -> pd.D
                     
                     # Drop temporary column
                     df.drop('ProductText', axis=1, inplace=True)
-                    print("     ✅ Products data analyzed successfully")
+                    print("      Products data analyzed successfully")
     except Exception as e:
-        print(f"     ⚠️  Could not load products data: {e}")
+        print(f"       Could not load products data: {e}")
     
-    print("     🔍 Analyzing facilities data for industry classification...")
+    print("      Analyzing facilities data for industry classification...")
     # Step 3: Load and analyze Facilities data
     try:
         facilities_path = Path(inputs_dir) / 'dbo.CompanyTestFacility.csv'
@@ -294,9 +294,9 @@ def _infer_industry_domain(df: pd.DataFrame, inputs_dir: str = 'inputs') -> pd.D
                         
                         # Drop temporary column
                         df.drop('FacilityText', axis=1, inplace=True)
-                        print("     ✅ Facilities data analyzed successfully")
+                        print("      Facilities data analyzed successfully")
     except Exception as e:
-        print(f"     ⚠️  Could not load facilities data: {e}")
+        print(f"       Could not load facilities data: {e}")
     
     # Step 4: Check Address for additional context
     if 'Address' in df.columns:
@@ -313,7 +313,7 @@ def _infer_industry_domain(df: pd.DataFrame, inputs_dir: str = 'inputs') -> pd.D
     df.loc[df['IndustryDomain'].isin(['', 'nan', 'NaN']), 'IndustryDomain'] = 'Other'
     
     # Step 5: LLM-based classification for remaining "Other" companies
-    print("     🤖 Using LLM classifier for remaining companies...")
+    print("      Using LLM classifier for remaining companies...")
     other_mask = df['IndustryDomain'] == 'Other'
     other_count = other_mask.sum()
     
@@ -338,7 +338,7 @@ def _infer_industry_domain(df: pd.DataFrame, inputs_dir: str = 'inputs') -> pd.D
                 other_indices.append(idx)
             
             # Classify in batches
-            print(f"     🔄 Classifying {len(companies_to_classify)} companies using LLM...")
+            print(f"      Classifying {len(companies_to_classify)} companies using LLM...")
             classifications = classifier.classify_batch(companies_to_classify, confidence_threshold=0.35)
             
             # Apply results
@@ -349,13 +349,13 @@ def _infer_industry_domain(df: pd.DataFrame, inputs_dir: str = 'inputs') -> pd.D
                     llm_count += 1
             
             if llm_count > 0:
-                print(f"     ✅ LLM classified {llm_count} additional companies")
+                print(f"      LLM classified {llm_count} additional companies")
             else:
-                print(f"     ℹ️  LLM unable to confidently classify remaining companies")
+                print(f"     ℹ  LLM unable to confidently classify remaining companies")
         
         except Exception as e:
-            print(f"     ⚠️  LLM classification failed: {e}")
-            print(f"     ℹ️  Continuing with rule-based classifications only")
+            print(f"       LLM classification failed: {e}")
+            print(f"     ℹ  Continuing with rule-based classifications only")
     
     return df
 
@@ -396,7 +396,7 @@ def write_company_classifications(out_dir, company_df: pd.DataFrame) -> None:
         # Also print statistics
         if 'is_government_company' in classifications.columns:
             govt_count = classifications['is_government_company'].sum()
-            print(f"     ℹ️  Found {govt_count} government companies")
+            print(f"     ℹ  Found {govt_count} government companies")
         if 'is_msme' in classifications.columns:
             msme_count = classifications['is_msme'].sum()
-            print(f"     ℹ️  Found {msme_count} MSME companies")
+            print(f"     ℹ  Found {msme_count} MSME companies")

@@ -32,10 +32,10 @@ class IntentHandler:
                 with open(intents_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
             else:
-                print(f"⚠️  Intent reference file {intents_file} not found")
+                print(f"  Intent reference file {intents_file} not found")
                 return {}
         except Exception as e:
-            print(f"⚠️  Error loading intent patterns: {e}")
+            print(f"  Error loading intent patterns: {e}")
             return {}
     
     def analyze_query(self, query: str) -> Dict[str, Any]:

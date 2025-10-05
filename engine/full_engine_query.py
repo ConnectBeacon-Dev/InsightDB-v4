@@ -40,7 +40,7 @@ except ImportError:
         INTENT_HANDLER_AVAILABLE = True
     except ImportError:
         INTENT_HANDLER_AVAILABLE = False
-        print("⚠️  IntentHandler not available, using legacy intent detection")
+        print("  IntentHandler not available, using legacy intent detection")
 
 # Optional dependencies
 TRANSFORMERS_AVAILABLE = False
@@ -63,7 +63,7 @@ class EnhancedQueryEngine:
         self,
         inputs_dir: str = "inputs",
         views_dir: str = "views",
-        model_name: str = "all-MiniLM-L6-v2",    # light, good default
+        model_name: str = "models/all-MiniLM-L6-v2",    # light, good default (local path)
         llm_model_path: Optional[str] = None,     # optional llama.cpp, not required here
         log_file: str = "query_log.jsonl",        # query logging file
         intents_file: str = "intents_reference.json"  # intent patterns reference
@@ -87,9 +87,9 @@ class EnhancedQueryEngine:
             try:
                 from llama_cpp import Llama  # lazy import
                 self.llm = Llama(model_path=llm_model_path, n_ctx=4096, n_threads=max(1, os.cpu_count() or 4))
-                print("✅ LLM loaded for optional answer synthesis.")
+                print(" LLM loaded for optional answer synthesis.")
             except Exception as e:
-                print(f"⚠️  Could not load LLM: {e}")
+                print(f"  Could not load LLM: {e}")
     
     def _load_intents(self, intents_file: str) -> Dict[str, Any]:
         """Load intent patterns from JSON reference file"""
@@ -98,13 +98,13 @@ class EnhancedQueryEngine:
             if intents_path.exists():
                 with open(intents_path, 'r', encoding='utf-8') as f:
                     intents = json.load(f)
-                print(f"✅ Loaded intent patterns from {intents_file}")
+                print(f" Loaded intent patterns from {intents_file}")
                 return intents
             else:
-                print(f"⚠️  Intent reference file {intents_file} not found, using default patterns")
+                print(f"  Intent reference file {intents_file} not found, using default patterns")
                 return {}
         except Exception as e:
-            print(f"⚠️  Error loading intent patterns: {e}")
+            print(f"  Error loading intent patterns: {e}")
             return {}
 
     # -------------------- Public: Build & Query --------------------
@@ -112,7 +112,7 @@ class EnhancedQueryEngine:
     def build_semantic_index(self, force: bool = False) -> None:
         """Build + persist embeddings over ALL views. Rebuilds only if CSV content hash changes."""
         if not TRANSFORMERS_AVAILABLE or np is None:
-            print("⚠️  sentence-transformers / numpy not available. Install with:")
+            print("  sentence-transformers / numpy not available. Install with:")
             print("    pip install sentence-transformers numpy")
             return
 
@@ -125,10 +125,10 @@ class EnhancedQueryEngine:
         if meta_path.exists() and emb_path.exists() and idx_path.exists() and not force:
             prev = json.loads(meta_path.read_text(encoding="utf-8"))
             if prev.get("content_hash") == content_hash:
-                print("✅ Semantic index already up-to-date.")
+                print(" Semantic index already up-to-date.")
                 return
 
-        print("🔧 Building semantic index from views...")
+        print(" Building semantic index from views...")
         doc_index = self._build_company_corpus(meta_info)  # DataFrame with CompanyId, CompanyName, search_text
         texts = doc_index["search_text"].tolist()
 
@@ -150,12 +150,12 @@ class EnhancedQueryEngine:
             "source_files": meta_info["files_present"],
         }
         meta_path.write_text(json.dumps(meta_out, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"✅ Index built: {emb.shape[0]} companies × {emb.shape[1]} dims")
+        print(f" Index built: {emb.shape[0]} companies × {emb.shape[1]} dims")
 
     def semantic_search_companies(self, query: str, top_k: int = 20) -> pd.DataFrame:
         """Search via the prebuilt semantic index with industry-aware weighted scoring."""
         if not TRANSFORMERS_AVAILABLE or np is None:
-            print("⚠️  Semantic search unavailable; falling back to keyword contains search.")
+            print("  Semantic search unavailable; falling back to keyword contains search.")
             return self._keyword_search(query)
 
         # Ensure index ready
@@ -163,7 +163,7 @@ class EnhancedQueryEngine:
 
         E, doc_index = self._load_index()
         if E is None or doc_index is None or E.shape[0] == 0:
-            print("⚠️  Index missing/empty; fallback to keyword.")
+            print("  Index missing/empty; fallback to keyword.")
             return self._keyword_search(query)
 
         self._ensure_embedder()
@@ -364,7 +364,7 @@ class EnhancedQueryEngine:
             
             # Log what we found
             if filtered.empty:
-                print("ℹ️  No MSME companies found based on Scale field. Scale data may not be populated.")
+                print("ℹ  No MSME companies found based on Scale field. Scale data may not be populated.")
                 
         elif filter_type == "location":
             # Filter by location (city, state, or address)
@@ -411,7 +411,7 @@ class EnhancedQueryEngine:
                 raise RuntimeError("sentence-transformers not installed.")
             print(f"Loading embedder: {self._embedder_name} ...")
             self._embedder = SentenceTransformer(self._embedder_name)
-            print("✅ Embedder ready.")
+            print(" Embedder ready.")
 
     def _collect_view_files(self) -> Dict[str, Any]:
         vd = self.views_dir
@@ -679,12 +679,12 @@ class EnhancedQueryEngine:
         if not product_keywords:
             return results  # Couldn't identify product
         
-        print(f"ℹ️  Product filter activated for keywords: {product_keywords}")
+        print(f"ℹ  Product filter activated for keywords: {product_keywords}")
         
         # Load Products.csv
         products_path = self.views_dir / "Products.csv"
         if not products_path.exists():
-            print("⚠️  Products.csv not found, skipping product filter")
+            print("  Products.csv not found, skipping product filter")
             return results
         
         try:
@@ -702,7 +702,7 @@ class EnhancedQueryEngine:
                 matching_products = products_df[mask]
                 companies_with_product.update(matching_products['CompanyMaster_FK_ID'].unique())
             
-            print(f"ℹ️  Found {len(companies_with_product)} companies with matching products in Products.csv")
+            print(f"ℹ  Found {len(companies_with_product)} companies with matching products in Products.csv")
             
             # Filter results: Keep companies that either have matching products OR keyword in company name
             mask = pd.Series(False, index=results.index)
@@ -726,12 +726,12 @@ class EnhancedQueryEngine:
             
             if not filtered.empty and len(filtered) < len(results):
                 removed = len(results) - len(filtered)
-                print(f"ℹ️  Product filter removed {removed} companies without matching products")
+                print(f"ℹ  Product filter removed {removed} companies without matching products")
             
             return filtered if not filtered.empty else results  # Return original if filter too aggressive
             
         except Exception as e:
-            print(f"⚠️  Product filter error: {e}, returning original results")
+            print(f"  Product filter error: {e}, returning original results")
             return results
 
     def _keyword_search(self, query: str) -> pd.DataFrame:
@@ -753,7 +753,7 @@ class EnhancedQueryEngine:
                 handler = IntentHandler("intents_reference.json")
                 return handler.analyze_query(q)
             except Exception as e:
-                print(f"⚠️  IntentHandler failed: {e}, using legacy detection")
+                print(f"  IntentHandler failed: {e}, using legacy detection")
         
         # Legacy fallback (original code)
         ql = q.lower()
@@ -850,7 +850,7 @@ class EnhancedQueryEngine:
                         else:
                             # No data found for the requested attribute, show what we have
                             lines = [f"For {company_row.get(company_col, company_name)}:"]
-                            lines.append(f"  ⚠️  {attribute.title()} information not available in database")
+                            lines.append(f"    {attribute.title()} information not available in database")
                             # Show other available fields
                             other_fields = {}
                             for col in ["CityName", "State", "Address", "OrgType", "Scale", "CoreExpertise"]:
@@ -912,7 +912,7 @@ Summary:"""
             # Combine: LLM summary + full list
             return f"{brief_summary}\n\n{full_answer}"
         except Exception as e:
-            print(f"⚠️  LLM summary failed: {e}")
+            print(f"  LLM summary failed: {e}")
             # Fallback to simple answer
             return full_answer
     
@@ -965,7 +965,7 @@ Summary:"""
             with open(self.log_file, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
         except Exception as e:
-            print(f"⚠️  Warning: Could not write to log file: {e}")
+            print(f"  Warning: Could not write to log file: {e}")
 
 
 # --------------------------- CLI ---------------------------
@@ -976,13 +976,13 @@ def _cli():
 
     p_idx = sub.add_parser("index", help="Build semantic index from views")
     p_idx.add_argument("--views", default="views", help="Path to views directory")
-    p_idx.add_argument("--model", default="all-MiniLM-L6-v2", help="Sentence-Transformers model name")
+    p_idx.add_argument("--model", default="models/all-MiniLM-L6-v2", help="Sentence-Transformers model name or local path")
     p_idx.add_argument("--force", action="store_true", help="Force rebuild even if up-to-date")
 
     p_q = sub.add_parser("query", help="Query the semantic index")
     p_q.add_argument("--views", default="views", help="Path to views directory")
     p_q.add_argument("--ask", required=True, help="Natural language query")
-    p_q.add_argument("--model", default="all-MiniLM-L6-v2", help="Sentence-Transformers model name")
+    p_q.add_argument("--model", default="models/all-MiniLM-L6-v2", help="Sentence-Transformers model name or local path")
     p_q.add_argument("--llm", default="", help="Optional: Path to LLM model file (llama.cpp compatible)")
     p_q.add_argument("--top-k", type=int, default=20, help="Top K results")
     p_q.add_argument("--zip-out", default="", help="Optional: write answer+results to ZIP")
@@ -1006,7 +1006,7 @@ def _cli():
         if args.zip_out:
             out_path = Path(args.zip_out).resolve()
             eng.export_results_zip(resp, str(out_path))
-            print(f"\n📦 Wrote ZIP: {out_path}")
+            print(f"\n Wrote ZIP: {out_path}")
 
 if __name__ == "__main__":
     _cli()

@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import sys
+import os
+
+# Fix encoding for Windows console (must be before any other imports)
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+
 """
 Download sentence-transformer model for offline use
 This ensures the model is cached locally and doesn't need internet later
@@ -26,7 +38,7 @@ def download_model():
     
     # Check if model already exists
     if check_model_exists(cache_dir, model_name):
-        print(f"✅ Model already exists: {cache_dir / model_name}")
+        print(f" Model already exists: {cache_dir / model_name}")
         print(f"Skipping download.")
         print()
         
@@ -35,10 +47,10 @@ def download_model():
             print("Testing existing model...")
             model = SentenceTransformer(str(cache_dir / model_name))
             test_embedding = model.encode(["test sentence"])
-            print(f"✅ Model works! (embedding dimensions: {len(test_embedding[0])})")
+            print(f" Model works! (embedding dimensions: {len(test_embedding[0])})")
             return True
         except Exception as e:
-            print(f"⚠️  Existing model corrupted: {e}")
+            print(f"  Existing model corrupted: {e}")
             print("Will re-download...")
             # Continue to download
     
@@ -52,8 +64,8 @@ def download_model():
         model = SentenceTransformer(model_name, cache_folder=str(cache_dir))
         
         print()
-        print(f"✅ Model downloaded successfully!")
-        print(f"📁 Cached in: {cache_dir.absolute()}")
+        print(f" Model downloaded successfully!")
+        print(f" Cached in: {cache_dir.absolute()}")
         print()
         print("You can now:")
         print("1. Transfer the 'models' folder to an offline machine")
@@ -63,10 +75,10 @@ def download_model():
         # Test the model
         print("Testing model...")
         test_embedding = model.encode(["test sentence"])
-        print(f"✅ Model works! (embedding dimensions: {len(test_embedding[0])})")
+        print(f" Model works! (embedding dimensions: {len(test_embedding[0])})")
         
     except Exception as e:
-        print(f"❌ Error downloading model: {e}")
+        print(f" Error downloading model: {e}")
         print()
         print("Troubleshooting:")
         print("1. Check internet connection")
