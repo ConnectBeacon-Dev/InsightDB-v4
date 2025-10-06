@@ -12,6 +12,7 @@ from flask import (
     send_from_directory, abort
 )
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Import our query engine
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -104,6 +105,19 @@ def _smalltalk_or_offtopic(q: str) -> str | None:
 # Flask app
 # --------------------------------------------------------------------------------------
 app = Flask(__name__, template_folder=str(TEMPLATES_DIR), static_folder=str(STATIC_DIR))
+
+# Configure reverse proxy support (handles X-Forwarded-* headers)
+# Set x_for=1 to trust 1 proxy (increase if you have multiple proxies)
+# Set x_proto=1 to handle X-Forwarded-Proto (http/https)
+# Set x_host=1 to handle X-Forwarded-Host
+# Set x_prefix=1 to handle X-Forwarded-Prefix (for URL path prefixes)
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, 
+    x_for=int(os.getenv("PROXY_X_FOR", "1")),
+    x_proto=int(os.getenv("PROXY_X_PROTO", "1")),
+    x_host=int(os.getenv("PROXY_X_HOST", "1")),
+    x_prefix=int(os.getenv("PROXY_X_PREFIX", "1"))
+)
 
 # Enable CORS for all routes (allows access from file:// and other origins)
 CORS(app, resources={

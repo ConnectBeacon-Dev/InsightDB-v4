@@ -7,19 +7,20 @@ make_wheelhouse.py (minimal, zero-arg)
 Usage:
   python make_wheelhouse.py
 
-Assumes:
+Assumes (fixed paths):
   - requirements.txt          (root)
   - wheelhouse/               (output, will be DELETED)
-  - models/                   (model root; the 'all-MiniLM-L6-v2' subfolder will be DELETED)
+  - models/                   (model root; ONLY 'all-MiniLM-L6-v2' subfolder will be DELETED)
 
 What it does:
   1) Clean wheelhouse + models/all-MiniLM-L6-v2
   2) Download wheels for requirements (excluding torch/llama-cpp-python initially)
-  3) Ensure torch (CPU) wheels
-  4) Ensure waitress wheel (2.1.2)
-  5) Ensure diskcache wheel (>=5.6.1)  ← added
-  6) Ensure llama-cpp-python wheel (prebuilt → install-and-capture → robust local build with MinGW/MSVC)
-  7) Download model: sentence-transformers/all-MiniLM-L6-v2
+  3) Ensure torch (CPU) wheels (2.8.0)
+  4) Ensure waitress wheel (==2.1.2)
+  5) Ensure diskcache wheel (version read from requirements)
+  6) Ensure Flask-CORS wheel (version read from requirements — e.g., 6.0.1)
+  7) Ensure llama-cpp-python wheel (prebuilt → install-and-capture → robust local build if needed)
+  8) Download model: sentence-transformers/all-MiniLM-L6-v2
 """
 
 from __future__ import annotations
@@ -46,10 +47,9 @@ WHEELHOUSE     = REPO / "wheelhouse"
 MODELS_DIR     = REPO / "models"
 MODEL_REPO_ID  = "sentence-transformers/all-MiniLM-L6-v2"
 WAITRESS_VER   = "2.1.2"
-DISKCACHE_SPEC = "diskcache>=5.6.1"
 TMP_DIR        = REPO / ".tmp"
 
-# Torch channels
+# Torch channel (CPU)
 CHANNEL_INDEX = {
     "cpu": "https://download.pytorch.org/whl/cpu",
 }
@@ -114,9 +114,38 @@ def is_windows() -> bool:
 def normalize_repo_id(repo_id: str) -> str:
     return repo_id.rstrip("/").split("/")[-1]
 
-# ---------- Requirements filtering ----------
-EXCLUDE_PKGS = {"llama-cpp-python", "torch", "torchvision", "torchaudio"}
+# ---------- Parse pinned versions from requirements ----------
 _name_re = re.compile(r"^\s*([A-Za-z0-9_.\-]+)")
+
+def _canon(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+def parse_pins_from_requirements(req: Path) -> dict[str, str]:
+    """
+    Returns a mapping of canonicalized package name -> exact '==x.y.z' or spec string.
+    """
+    pins: dict[str, str] = {}
+    if not req.exists():
+        return pins
+    for raw in req.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("-r "):
+            continue
+        m = _name_re.match(line)
+        if not m:
+            continue
+        name = _canon(m.group(1))
+        # keep full spec after the name (e.g., ==1.2.3, >=, etc.)
+        spec = line[len(m.group(1)) :].strip()
+        if spec:
+            pins[name] = spec
+        else:
+            pins[name] = ""
+    return pins
+
+# ---------- Requirements filtering ----------
+# we exclude torch and llama-cpp-python from the initial download (handled explicitly)
+EXCLUDE_PKGS = {"llama-cpp-python", "torch", "torchvision", "torchaudio"}
 
 def make_filtered_requirements(orig: Path) -> Path:
     fd, tmp_name = tempfile.mkstemp(prefix="req_filtered_", suffix=".txt", dir=str(TMP_DIR))
@@ -127,15 +156,15 @@ def make_filtered_requirements(orig: Path) -> Path:
         for raw in fin:
             line = raw.strip()
             if not line or line.startswith("#") or line.startswith("-r "):
-                fout.write(raw)
+                fout.write(raw + ("\n" if not raw.endswith("\n") else ""))
                 continue
             m = _name_re.match(line)
             if m:
-                name = m.group(1).lower()
+                name = _canon(m.group(1))
                 if name in EXCLUDE_PKGS:
                     skipped.append(name)
                     continue
-            fout.write(raw)
+            fout.write(raw + ("\n" if not raw.endswith("\n") else ""))
     print(f"[FILTER] Excluded: {sorted(set(skipped)) or 'none'}")
     return tmp
 
@@ -147,7 +176,7 @@ def ensure_torch_wheels(out: Path, channel: str = "cpu"):
     index_url = CHANNEL_INDEX[channel]
     print(f"[TORCH] Downloading torch from {index_url}")
     run(pip("download", "-d", str(out), "--only-binary=:all:", "--prefer-binary",
-            "--index-url", index_url, "torch"))
+            "--index-url", index_url, "torch==2.8.0"))
 
 # ---------- Waitress wheel ----------
 def ensure_waitress_wheel(out: Path, version: str = WAITRESS_VER):
@@ -157,13 +186,26 @@ def ensure_waitress_wheel(out: Path, version: str = WAITRESS_VER):
     print(f"[SERVE] Downloading waitress=={version}")
     run(pip("download", f"waitress=={version}", "-d", str(out), "--only-binary=:all:", "--prefer-binary"))
 
-# ---------- Diskcache wheel (for llama-cpp-python runtime) ----------
-def ensure_diskcache_wheel(out: Path, spec: str = DISKCACHE_SPEC):
+# ---------- Diskcache wheel (sync with requirements) ----------
+def ensure_diskcache_wheel(out: Path, req_pins: dict[str, str]):
     if has_wheel(out, "diskcache"):
         print("[DISKCACHE] wheel already present.")
         return
-    print(f"[DISKCACHE] Downloading {spec}")
-    run(pip("download", spec, "-d", str(out), "--only-binary=:all:", "--prefer-binary"))
+    spec = req_pins.get("diskcache", ">=5.6.1")
+    want = f"diskcache{spec}" if spec else "diskcache"
+    print(f"[DISKCACHE] Downloading {want}")
+    run(pip("download", want, "-d", str(out), "--only-binary=:all:", "--prefer-binary"))
+
+# ---------- Flask-CORS wheel (sync with requirements) ----------
+def ensure_flask_cors_wheel(out: Path, req_pins: dict[str, str]):
+    # On PyPI it's project 'Flask-Cors' (case-insensitive). Wheel filename prefix is 'Flask_Cors-...'
+    if has_wheel(out, "flask_cors"):
+        print("[CORS] Flask-CORS wheel already present.")
+        return
+    spec = req_pins.get("flask-cors", "") or req_pins.get("flask_cors", "")
+    want = f"Flask-Cors{spec}" if spec else "Flask-Cors"
+    print(f"[CORS] Downloading {want}")
+    run(pip("download", want, "-d", str(out), "--only-binary=:all:", "--prefer-binary"))
 
 # ---------- llama-cpp-python helpers ----------
 def try_download_llama(out: Path, version: str | None) -> bool:
@@ -261,7 +303,7 @@ def _pip_download_sdist_llama(version: str | None, dest: Path) -> Path:
     dl_env = os.environ.copy()
     dl_env.setdefault("PIP_NO_BUILD_ISOLATION", "1")
     dl_env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
-    run(pip("download", "--no-binary=:all:", "--no-deps", pkg, "-d", str(dest)), env=dl_env)
+    run([sys.executable, "-m", "pip", "download", "--no-binary=:all:", "--no-deps", pkg, "-d", str(dest)], env=dl_env)
     tars = list(dest.glob("llama-cpp-python-*.tar.gz")) + list(dest.glob("llama-cpp-python-*.zip"))
     if not tars:
         raise RuntimeError("Could not download llama-cpp-python sdist.")
@@ -413,6 +455,9 @@ def main():
         raise SystemExit(f"[ERROR] Missing {REQUIREMENTS}")
     set_repo_local_temp_and_caches()
 
+    # Read pins (to sync diskcache / flask-cors steps with requirements)
+    pins = parse_pins_from_requirements(REQUIREMENTS)
+
     model_subdir = MODELS_DIR / normalize_repo_id(MODEL_REPO_ID)
 
     # Clean
@@ -429,22 +474,26 @@ def main():
     filtered = make_filtered_requirements(REQUIREMENTS)
 
     try:
-        # Step 1: download filtered reqs
+        # Step 1: download filtered reqs (pure wheels)
         print("\n=== STEP 1: Downloading filtered requirements ===")
         run(pip("download", "-r", str(filtered), "-d", str(WHEELHOUSE),
                 "--only-binary=:all:", "--prefer-binary"))
 
-        # Step 2: torch (cpu)
+        # Step 2: torch (cpu) pinned 2.8.0
         print("\n=== STEP 2: Ensuring torch (CPU) ===")
         ensure_torch_wheels(WHEELHOUSE, channel="cpu")
 
-        # Step 2.5: waitress
+        # Step 2.5: waitress (explicit pin)
         print("\n=== STEP 2.5: Ensuring waitress ===")
         ensure_waitress_wheel(WHEELHOUSE, version=WAITRESS_VER)
 
-        # Step 2.6: diskcache (for llama-cpp-python runtime)
+        # Step 2.6: diskcache (sync with requirements)
         print("\n=== STEP 2.6: Ensuring diskcache ===")
-        ensure_diskcache_wheel(WHEELHOUSE, spec=DISKCACHE_SPEC)
+        ensure_diskcache_wheel(WHEELHOUSE, pins)
+
+        # Step 2.7: Flask-CORS (sync with requirements, e.g., 6.0.1)
+        print("\n=== STEP 2.7: Ensuring Flask-CORS ===")
+        ensure_flask_cors_wheel(WHEELHOUSE, pins)
 
         # Step 3: llama-cpp-python
         print("\n=== STEP 3: Ensuring llama-cpp-python ===")
@@ -459,7 +508,7 @@ def main():
         print("\n=== DONE (fresh wheelhouse + model) ===")
         print(f"Wheelhouse: {WHEELHOUSE}")
         print(f"Model dir:  {model_subdir}")
-        print("\nOffline install:")
+        print("\nOffline install example:")
         print(f"  pip install --no-index --find-links={WHEELHOUSE} -r {REQUIREMENTS}")
 
     finally:

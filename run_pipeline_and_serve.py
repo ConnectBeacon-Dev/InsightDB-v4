@@ -19,13 +19,21 @@ Offline-friendly launcher that:
   1) Ensures waitress is installed from wheelhouse (no internet)
   2) Runs ETL and indexing
   3) (optional) Smoke query
-  4) Serves app_rag_chat:app with waitress on 0.0.0.0:PORT
+  4) Serves app_rag_chat:app with waitress on specified host:PORT
+  5) ALWAYS enables reverse proxy support (PROXY_X_* environment variables)
 Works even if .venv is not activated.
+
+Environment Variables:
+  SERVER_HOST - Server bind IP address (default: 10.246.31.198)
+                Example in PowerShell: $env:SERVER_HOST="192.168.1.100"; python run_pipeline_and_serve.py
 
 Usage Examples:
 
 Minimal (uses all defaults):
   python run_pipeline_and_serve.py
+
+With custom host via environment variable (PowerShell):
+  $env:SERVER_HOST="192.168.1.100"; python run_pipeline_and_serve.py
 
 With custom port and detached mode:
   python run_pipeline_and_serve.py --port 9000 --detached
@@ -48,6 +56,7 @@ Defaults:
   --port 8000
   --threads 8
   --tmp-dir .tmp
+  SERVER_HOST 10.246.31.198 (environment variable)
 """
 
 
@@ -104,9 +113,9 @@ def smoke_query(py: Path, views: Path, ask: str, topk: int) -> None:
     run([str(py), str(REPO / "engine" / "full_engine_query.py"), "query", "--views", str(views),
          "--ask", ask, "--top-k", str(topk)], check=False)
 
-def start_waitress(py: Path, port: int, threads: int, env: dict, detached: bool, log_dir: Path | None) -> None:
-    cmd = [str(py), "-m", "waitress", "--listen", f"0.0.0.0:{port}", "--threads", str(threads), "app_rag_chat:app"]
-    print(f"[SERVE] Starting waitress on 0.0.0.0:{port} (threads={threads})")
+def start_waitress(py: Path, host: str, port: int, threads: int, env: dict, detached: bool, log_dir: Path | None) -> None:
+    cmd = [str(py), "-m", "waitress", "--listen", f"{host}:{port}", "--threads", str(threads), "app_rag_chat:app"]
+    print(f"[SERVE] Starting waitress on {host}:{port} (threads={threads})")
 
     if detached:
         # background with log redirection
@@ -152,8 +161,8 @@ def main():
                    help="Waitress threads (default: 8)")
     ap.add_argument("--tmp-dir", type=Path, default=Path(".tmp"), 
                    help="Repo-local temp dir (default: ./.tmp)")
-    ap.add_argument("--detached", action="store_true", 
-                   help="Run waitress in background")
+    ap.add_argument("--detached", action="store_true", default=True,
+                   help="Run waitress in background (always enabled by default)")
     ap.add_argument("--skip-etl", action="store_true", 
                    help="Skip ETL build_views_pandas.py")
     ap.add_argument("--skip-index", action="store_true", 
@@ -189,6 +198,10 @@ def main():
     # quick smoke query (non-fatal)
     smoke_query(py, args.views.resolve(), args.smoke_ask, args.smoke_topk)
 
+    # Get server host from environment variable or use default
+    server_host = os.environ.get("SERVER_HOST", "10.246.31.198")
+    print(f"[CONFIG] Server host: {server_host} (from {'SERVER_HOST env var' if 'SERVER_HOST' in os.environ else 'default'})")
+
     # runtime env for the app
     app_env = os.environ.copy()
     app_env.setdefault("TRANSFORMERS_OFFLINE", "1")
@@ -197,12 +210,20 @@ def main():
     app_env["VIEWS_DIR"] = str(args.views.resolve())
     app_env["LLM_MODEL"] = str(args.model_gguf.resolve())
     app_env["EMBEDDING_MODEL"] = str(args.embedding_model.resolve())
+    
+    # Reverse proxy support - ALWAYS ENABLED
+    # These control how Flask handles X-Forwarded-* headers from reverse proxies
+    # Always trust 1 proxy for each header type
+    app_env["PROXY_X_FOR"] = "1"      # X-Forwarded-For (client IP)
+    app_env["PROXY_X_PROTO"] = "1"    # X-Forwarded-Proto (http/https)
+    app_env["PROXY_X_HOST"] = "1"     # X-Forwarded-Host (hostname)
+    app_env["PROXY_X_PREFIX"] = "1"   # X-Forwarded-Prefix (URL prefix)
 
     # serve with waitress (foreground or detached)
-    start_waitress(py, args.port, args.threads, app_env, args.detached, log_dir=REPO / "logs")
+    start_waitress(py, server_host, args.port, args.threads, app_env, args.detached, log_dir=REPO / "logs")
 
     print("\n=== READY ===")
-    print(f"URL: http://localhost:{args.port}/")
+    print(f"URL: http://{server_host}:{args.port}/")
     if args.detached:
         print("Server is running in background. Check logs/server.out for output.")
 
