@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Defense India Chatbot</title>
-  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <link href="{{ url_for('static', filename='fonts/inter.css') }}" rel="stylesheet">
-  <script src="{{ url_for('static', filename='marked.min.js') }}"></script>
+  <link rel="icon" type="image/x-icon" href="/aichat/static/favicon.ico">
+  <link href="/aichat/static/fonts/inter.css" rel="stylesheet">
+  <script src="/aichat/static/marked.min.js"></script>
   <style>
     :root{
       --bg:#f6f7fb; --card:#fff; --muted:#6b7280; --border:#e5e7eb; --brand:#12a150;
@@ -238,7 +238,7 @@ async function ask(){
   input.value=''; sendBtn.disabled = true; addMessage('user', q);
   const tid = addThinking();
 
-  const sse = new EventSourcePolyfill('{{ url_for("ask_stream") }}', {
+  const sse = new EventSourcePolyfill('/aichat/ask_stream', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     payload: JSON.stringify({ query: q }),
