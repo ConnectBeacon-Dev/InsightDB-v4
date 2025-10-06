@@ -259,7 +259,17 @@ def _extract_w64devkit() -> Path:
     return bin_dir
 
 def _cpu_flags_merge(env: dict) -> dict:
-    need_cmake = ["-DLLAMA_BLAS=OFF", "-DLLAMA_CUBLAS=OFF", "-DGGML_BLAS=OFF", "-DCMAKE_CXX_STANDARD=17"]
+    # Disable AVX-512 for Intel Xeon Gold 6130 compatibility (AVX2 only)
+    need_cmake = [
+        "-DLLAMA_BLAS=OFF", 
+        "-DLLAMA_CUBLAS=OFF", 
+        "-DGGML_BLAS=OFF", 
+        "-DCMAKE_CXX_STANDARD=17",
+        "-DGGML_AVX2=ON",      # Enable AVX2 (supported by Xeon Gold 6130)
+        "-DGGML_AVX512=OFF",   # Disable AVX-512 (NOT supported)
+        "-DGGML_FMA=ON",       # Enable FMA
+        "-DGGML_F16C=ON"       # Enable F16C
+    ]
     cm = env.get("CMAKE_ARGS", "")
     for flag in need_cmake:
         if flag not in cm:
