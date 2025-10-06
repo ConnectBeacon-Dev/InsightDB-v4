@@ -11,6 +11,7 @@ from flask import (
     Flask, request, jsonify, render_template, Response,
     send_from_directory, abort
 )
+from flask_cors import CORS
 
 # Import our query engine
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -103,6 +104,16 @@ def _smalltalk_or_offtopic(q: str) -> str | None:
 # Flask app
 # --------------------------------------------------------------------------------------
 app = Flask(__name__, template_folder=str(TEMPLATES_DIR), static_folder=str(STATIC_DIR))
+
+# Enable CORS for all routes (allows access from file:// and other origins)
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+        "expose_headers": ["Content-Type"]
+    }
+})
 
 # --------------------------------------------------------------------------------------
 # Helpers
