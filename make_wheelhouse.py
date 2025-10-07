@@ -202,6 +202,28 @@ def ensure_flask_cors_wheel(out: Path, req_pins: dict[str, str]):
     if has_wheel(out, "flask_cors"):
         print("[CORS] Flask-CORS wheel already present.")
         return
+
+
+# ---------- py-cpuinfo wheel (sync with requirements or env override) ----------
+def ensure_py_cpuinfo_wheel(out: Path, req_pins: dict[str, str]):
+    """
+    Ensures a py-cpuinfo wheel is present in the wheelhouse.
+    Priority for selecting version/spec:
+      1) requirements.txt pin for 'py-cpuinfo' (or alias 'cpuinfo')
+      2) environment variable PY_CPUINFO_VERSION (interpreted as '==X.Y.Z')
+      3) latest available (no spec)
+    """
+    if has_wheel(out, "py_cpuinfo"):
+        print("[CPUINFO] wheel already present.")
+        return
+    # spec from requirements if present
+    spec = req_pins.get("py-cpuinfo", "") or req_pins.get("cpuinfo", "") or req_pins.get("py_cpuinfo", "")
+    env_ver = os.environ.get("PY_CPUINFO_VERSION", "").strip()
+    if env_ver and not spec:
+        spec = f"=={env_ver}"
+    want = f"py-cpuinfo{spec}" if spec else "py-cpuinfo"
+    print(f"[CPUINFO] Downloading {want}")
+    run(pip("download", want, "-d", str(out), "--only-binary=:all:", "--prefer-binary"))
     spec = req_pins.get("flask-cors", "") or req_pins.get("flask_cors", "")
     want = f"Flask-Cors{spec}" if spec else "Flask-Cors"
     print(f"[CORS] Downloading {want}")
@@ -516,7 +538,11 @@ def main():
         print("\n=== STEP 2.7: Ensuring Flask-CORS ===")
         ensure_flask_cors_wheel(WHEELHOUSE, pins)
 
-        # Step 3: llama-cpp-python
+        
+        # Step 2.8: py-cpuinfo (sync with requirements or env)
+        print("\n=== STEP 2.8: Ensuring py-cpuinfo ===")
+        ensure_py_cpuinfo_wheel(WHEELHOUSE, pins)
+# Step 3: llama-cpp-python
         print("\n=== STEP 3: Ensuring llama-cpp-python ===")
         _ = ensure_llama_wheel(WHEELHOUSE)
         print(f"[LLAMA] Ready: {find_wheel(WHEELHOUSE, 'llama_cpp_python').name}")
