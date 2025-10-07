@@ -259,26 +259,37 @@ def _extract_w64devkit() -> Path:
     return bin_dir
 
 def _cpu_flags_merge(env: dict) -> dict:
-    # Disable AVX-512 for Intel Xeon Gold 6130 compatibility (AVX2 only)
+    """
+    Universal Windows/Intel build profile for llama-cpp-python:
+    - CPU-only
+    - SSE3 baseline (AVX/AVX2/FMA/F16C/AVX-512 OFF) to avoid 0xC000001D on old/VM hosts
+    - OpenMP ON for better multi-thread CPU throughput
+    """
     need_cmake = [
-        "-DLLAMA_BLAS=OFF", 
-        "-DLLAMA_CUBLAS=OFF", 
-        "-DGGML_BLAS=OFF", 
+        "-DLLAMA_NATIVE=OFF",
+        "-DLLAMA_BLAS=OFF",
+        "-DLLAMA_CUBLAS=OFF",
+        "-DGGML_BLAS=OFF",
+        "-DGGML_OPENMP=ON",
+        "-DGGML_CUDA=OFF",
+        "-DGGML_AVX=OFF",
+        "-DGGML_AVX2=OFF",
+        "-DGGML_FMA=OFF",
+        "-DGGML_F16C=OFF",
+        "-DGGML_SSE3=ON",
+        "-DGGML_AVX512=OFF",
+        "-DLLAMA_BUILD_TESTS=OFF",
+        "-DLLAMA_BUILD_EXAMPLES=OFF",
         "-DCMAKE_CXX_STANDARD=17",
-        "-DGGML_AVX2=ON",      # Enable AVX2 (supported by Xeon Gold 6130)
-        "-DGGML_AVX512=OFF",   # Disable AVX-512 (NOT supported)
-        "-DGGML_FMA=ON",       # Enable FMA
-        "-DGGML_F16C=ON"       # Enable F16C
     ]
     cm = env.get("CMAKE_ARGS", "")
     for flag in need_cmake:
         if flag not in cm:
             cm += (" " if cm else "") + flag
-    env["CMAKE_ARGS"] = cm
-    cxxf = env.get("CXXFLAGS", "")
-    if "-std=gnu++17" not in cxxf and "-std=c++17" not in cxxf:
-        cxxf = (cxxf + " -std=gnu++17").strip()
-    env["CXXFLAGS"] = cxxf
+    env["CMAKE_ARGS"] = cm.strip()
+    # Remove any aggressive arch flags that could sneak in from environment
+    env.pop("CFLAGS", None)
+    env.pop("CXXFLAGS", None)
     return env
 
 def _windows_mingw_env() -> dict:

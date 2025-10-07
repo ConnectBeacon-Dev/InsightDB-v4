@@ -31,6 +31,9 @@ VIEWS_DIR = Path(os.getenv("VIEWS_DIR", APP_DIR / "views"))
 LLM_PATH = Path(os.getenv("LLM_MODEL", "models/Qwen2.5-3B-Instruct-Q8_0.gguf"))
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/all-MiniLM-L6-v2")
 DEFAULT_K = int(os.getenv("RAG_K", "20"))
+# LLM disabled by default (due to CPU compatibility issues)
+# Set ENABLE_LLM=1 to enable it
+DISABLE_LLM = os.getenv("ENABLE_LLM", "0") != "1"
 
 # Initialize query engine (singleton for the app)
 _query_engine = None
@@ -41,11 +44,22 @@ def get_query_engine():
     if _query_engine is None:
         print(f"Initializing query engine...")
         print(f"  Views: {VIEWS_DIR}")
-        print(f"  LLM: {LLM_PATH}")
+        
+        # Determine LLM path based on DISABLE_LLM flag
+        if DISABLE_LLM:
+            llm_path = None
+            print(f"  LLM: DISABLED by default (set ENABLE_LLM=1 to enable)")
+        elif LLM_PATH.exists():
+            llm_path = str(LLM_PATH)
+            print(f"  LLM: {LLM_PATH}")
+        else:
+            llm_path = None
+            print(f"  LLM: Not found at {LLM_PATH}")
+        
         _query_engine = EnhancedQueryEngine(
             views_dir=str(VIEWS_DIR),
             model_name=EMBEDDING_MODEL,
-            llm_model_path=str(LLM_PATH) if LLM_PATH.exists() else None,
+            llm_model_path=llm_path,
             log_file="query_log.jsonl"
         )
         # Build index on startup
