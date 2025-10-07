@@ -1,0 +1,25 @@
+# 1) Activate venv
+.\.venv\Scripts\Activate.ps1
+
+# 2) Make 100% sure we’re using this Python
+where python
+
+# 3) Uninstall any existing builds
+python -m pip uninstall -y llama-cpp-python llama-cpp-python-cuda
+
+# 4) Remove any leftover package folders (sometimes DLLs linger)
+$sp = python - << 'PY'
+import site; print(site.getsitepackages()[0])
+PY
+Remove-Item -Recurse -Force "$sp\llama_cpp" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$sp\llama_cpp_python*" -ErrorAction SilentlyContinue
+
+# 5) Purge pip cache so it can’t slip in an older wheel
+python -m pip cache purge
+
+# 6) Force-reinstall from YOUR wheelhouse (CPU-only wheel you just built)
+#    (Adjust the filename if your version differs)
+python -m pip install --no-index --no-deps --force-reinstall .\wheelhouse\llama_cpp_python-0.3.16-*.whl
+
+# 7) Quick crash check
+python -X faulthandler -c "import llama_cpp; from llama_cpp import Llama; print('llama_cpp OK')"
