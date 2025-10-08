@@ -53,7 +53,7 @@ examples/
   
   <chatbot-widget 
     api-url="http://127.0.0.1:8000"
-    theme="#12a150"
+    theme="#6915CF"
     height="600px"
   ></chatbot-widget>
 </body>
@@ -220,7 +220,7 @@ node chatbot_client.js
 | Attribute | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `api-url` | string | `http://127.0.0.1:8000` | API endpoint URL |
-| `theme` | string | `#12a150` | Primary color (header) |
+| `theme` | string | `#6915CF` | Primary color (header) |
 | `height` | string | `600px` | Widget height |
 
 ### Example with all options:

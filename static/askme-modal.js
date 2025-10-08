@@ -3,7 +3,7 @@
   const S = document.currentScript || (function(){const s=document.getElementsByTagName('script');return s[s.length-1];})();
   const CHAT_URL = S.getAttribute('data-chat-url') || '/chat';
   const LABEL    = S.getAttribute('data-label') || 'Ask Me';
-  const THEME    = S.getAttribute('data-theme') || '#12a150';
+  const THEME    = S.getAttribute('data-theme') || '#6915CF';
   const POS      = S.getAttribute('data-position') || 'right';
 
   const HEADER_MODE = (S.getAttribute('data-header') || 'compact').toLowerCase(); // 'compact' | 'normal'

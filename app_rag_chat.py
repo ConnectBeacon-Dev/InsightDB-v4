@@ -88,9 +88,11 @@ _GREETINGS = [
     "Namaste! You can search by certification (e.g., ISO 9001), product (e.g., High Voltage Transformer), or turnover."
 ]
 
-def _smalltalk_or_offtopic(q: str) -> str | None:
+def _smalltalk_or_offtopic(q: str, user_name: str | None = None) -> str | None:
     """Return a short assistant response for smalltalk/help/off-topic, else None."""
     if _GREET_RE.search(q):
+        if user_name:
+            return f"Hi {user_name}! " + "Ask me about companies (location, domain), ISO certifications, products, or revenue."
         return random.choice(_GREETINGS)
     if _THANKS_RE.search(q):
         return "You're welcome! If you’d like, ask me about company locations, products, or certifications."
@@ -134,14 +136,7 @@ app.wsgi_app = ProxyFix(
 )
 
 # Enable CORS for all routes (allows access from file:// and other origins)
-CORS(app, resources={
-    r"/*": {
-        "origins": "*",
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"],
-        "expose_headers": ["Content-Type"]
-    }
-})
+CORS(app)
 
 # --------------------------------------------------------------------------------------
 # Helpers
@@ -199,6 +194,7 @@ def home():
     return "Ask app is running. Put portal.html into ./templates or this folder."
 
 @app.route("/chat")
+@app.route("/aichat/chat")
 def chat_page():
     p = _find_in(TEMPLATES_DIR, "index.html")
     if p.exists():
@@ -216,6 +212,7 @@ def favicon():
     abort(404)
 
 @app.route("/static/<path:filename>")
+@app.route("/aichat/static/<path:filename>")
 def static_fallback(filename: str):
     try:
         return app.send_static_file(filename)
@@ -239,11 +236,12 @@ def ask_once():
     data = request.get_json(silent=True) or {}
     q = (data.get("query") or "").strip()
     k = int(data.get("k") or DEFAULT_K)
+    user_name = (data.get("user_name") or "").strip() or None
     if not q:
         return jsonify({"status": "error", "message": "query is required"}), 400
 
     # Smalltalk/off-topic quick replies (no query engine call)
-    st = _smalltalk_or_offtopic(q)
+    st = _smalltalk_or_offtopic(q, user_name)
     if st:
         return jsonify({"status": "success", "answer": st})
 
@@ -256,6 +254,8 @@ def ask_once():
 
 @app.post("/ask_stream")
 @app.post("/ask_stream/")
+@app.post("/aichat/ask_stream")
+@app.post("/aichat/ask_stream/")
 def ask_stream():
     """
     Streaming SSE endpoint that chat.html uses.
@@ -264,12 +264,13 @@ def ask_stream():
     data = request.get_json(silent=True) or {}
     q = (data.get("query") or "").strip()
     k = int(data.get("k") or DEFAULT_K)
+    user_name = (data.get("user_name") or "").strip() or None
 
     if not q:
         return Response("event: error\ndata: query is required\n\n", mimetype="text/event-stream")
 
     # Smalltalk/off-topic quick replies
-    st = _smalltalk_or_offtopic(q)
+    st = _smalltalk_or_offtopic(q, user_name)
     if st:
         return Response(_stream_smalltalk(st), mimetype="text/event-stream")
 
@@ -288,6 +289,28 @@ def ask_stream():
             yield f"event: error\ndata: {json.dumps(msg)}\n\n"
 
     return Response(generate(), mimetype="text/event-stream")
+
+
+
+def _welcome_message(user_name: str | None = None) -> str:
+    base = (
+        'Welcome! I can help you find companies by location/domain, ISO certifications, and products. '
+        'Try "help" or start with a query like: "electronics manufacturers in India".'
+    )
+    if user_name:
+        return f"Welcome {user_name}! I can help you find companies by location/domain, ISO certifications, and products. " \
+               f'Try "help" or start with a query like: "electronics manufacturers in India".'
+    return base
+
+
+@app.route('/welcome', methods=['POST'])
+@app.route('/aichat/welcome', methods=['POST'])
+def welcome():
+    data = request.get_json(silent=True) or {}
+    user_name = (data.get('user_name') or '').strip() or None
+    msg = _welcome_message(user_name)
+    return jsonify({'message': msg})
+
 
 # --------------------------------------------------------------------------------------
 # Main

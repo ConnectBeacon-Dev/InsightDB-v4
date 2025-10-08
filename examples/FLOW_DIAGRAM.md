@@ -290,7 +290,7 @@ This document explains the complete data flow from when a user opens `demo.html`
 ```html
 <chatbot-widget 
   api-url="http://127.0.0.1:8000"
-  theme="#12a150"
+  theme="#6915CF"
   height="500px"
 ></chatbot-widget>
 <script src="chatbot-widget.js"></script>
