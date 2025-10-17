@@ -2,28 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-enhanced_query_engine.py
-- Build semantic embeddings from ALL CSV views first, then search.
-- Views expected in <views_dir>:
-    CompanyDetail.csv      (Id, CompanyName, City, State, Address, IndustryDomain, ...)
-    Certification.csv      (CompanyMaster_FK_ID, CertificationType, Number, Year, ...)
-    Facilities.csv         (CompanyMaster_FK_ID, FacilityType[R&D/TEST/MFG], Category, SubCategory, FacilityName, Description, Equipment, Capability, Range, ...)
-    Products.csv           (CompanyMaster_FK_ID, ProductName, Category, Description, ...)
-
-Artifacts:
-    <views_dir>/.sem_index/
-        embeddings.npy     (float32, row-normalized)
-        doc_index.csv      (CompanyId, CompanyName, search_text)
-        meta.json          (model, dims, content hash, source files)
-
-CLI:
-    python enhanced_query_engine.py index  --views views
-    python enhanced_query_engine.py query  --views views --ask "electrical domain companies in Pune" [--top-k 20] [--zip-out results.zip]
+enhanced_query_engine.py - WITH LOCATION-AWARE MATCHING
 """
 
 from __future__ import annotations
 
-import os, re, json, argparse, hashlib, io, zipfile, logging
+import os, re, json, argparse, hashlib, io, zipfile
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
@@ -53,21 +37,194 @@ except Exception:
 try:
     import numpy as np
 except Exception:
-    np = None  # we will guard where needed
+    np = None
+
+# BM25 support
+try:
+    from rank_bm25 import BM25Okapi
+    HAVE_BM25 = True
+except:
+    HAVE_BM25 = False
 
 
-# --------------------------- Core Engine ---------------------------
+# ============================================================================
+# DEPENDENCY CHECKING
+# ============================================================================
+
+def check_dependencies(verbose: bool = True) -> dict:
+    """
+    Check system dependencies and report status.
+    Returns dict with status and warnings.
+    """
+    status = {
+        "all_ok": True,
+        "critical_missing": [],
+        "optional_missing": [],
+        "warnings": []
+    }
+    
+    # Critical dependencies
+    if np is None:
+        status["critical_missing"].append("numpy")
+        status["all_ok"] = False
+    
+    try:
+        import pandas
+    except ImportError:
+        status["critical_missing"].append("pandas")
+        status["all_ok"] = False
+    
+    # Important but not critical
+    if not TRANSFORMERS_AVAILABLE:
+        status["optional_missing"].append("sentence-transformers")
+        status["warnings"].append("WARNING: sentence-transformers not installed - semantic search DISABLED, using keyword fallback")
+    
+    if not HAVE_BM25:
+        status["optional_missing"].append("rank-bm25")
+        status["warnings"].append("WARNING: rank-bm25 not installed - keyword scoring may be less accurate")
+    
+    if not INTENT_HANDLER_AVAILABLE:
+        status["optional_missing"].append("intent_handler")
+        status["warnings"].append("WARNING: IntentHandler not available - using legacy intent detection")
+    
+    # Print report if verbose
+    if verbose and (status["critical_missing"] or status["warnings"]):
+        print("\n" + "="*70)
+        print("DEPENDENCY STATUS CHECK")
+        print("="*70)
+        
+        if status["critical_missing"]:
+            print("\nCRITICAL DEPENDENCIES MISSING:")
+            for dep in status["critical_missing"]:
+                print(f"   - {dep}")
+            print("\n   System will NOT work properly!")
+            print("   Run: pip install -r requirements.txt")
+        
+        if status["warnings"]:
+            print("\nWARNINGS:")
+            for warning in status["warnings"]:
+                print(f"   {warning}")
+        
+        if not status["critical_missing"] and status["optional_missing"]:
+            print("\nOK: Core functionality available (with degraded features)")
+        elif not status["critical_missing"]:
+            print("\nOK: All dependencies installed")
+        
+        print("="*70 + "\n")
+    
+    # Raise error if critical dependencies missing
+    if status["critical_missing"]:
+        raise RuntimeError(
+            f"Critical dependencies missing: {', '.join(status['critical_missing'])}. "
+            f"Run: pip install -r requirements.txt"
+        )
+    
+    return status
+
+
+# ============================================================================
+# MODULE-LEVEL CONSTANTS AND HELPER FUNCTIONS
+# ============================================================================
+
+# Common Indian locations (canonical names) for extraction
+INDIAN_LOCATIONS = {
+    'maharashtra', 'gujarat', 'delhi', 'mumbai', 'bangalore', 'bengaluru',
+    'chennai', 'hyderabad', 'kolkata', 'pune', 'ahmedabad', 'kerala',
+    'karnataka', 'tamil nadu', 'telangana', 'rajasthan', 'punjab', 'haryana',
+    'uttar pradesh', 'madhya pradesh', 'andhra pradesh', 'west bengal',
+    'odisha', 'uttarakhand'
+}
+
+# Aliases and common misspellings mapped to canonical names
+COMMON_LOCATION_ALIASES = {
+    # Maharashtra variants
+    'maharastra': 'maharashtra',
+    'maharashra': 'maharashtra',
+    'maharashatra': 'maharashtra',
+    'maharashstra': 'maharashtra',
+    'mh': 'maharashtra',
+    # Gujarat
+    'gujrat': 'gujarat',
+    # Tamil Nadu
+    'tamilnadu': 'tamil nadu',
+    # Uttar Pradesh / Madhya Pradesh shorthand
+    'up': 'uttar pradesh',
+    'mp': 'madhya pradesh',
+}
+
+def _extract_location(text: str) -> Optional[str]:
+    """Extract location from text if present (robust to misspellings and multi-word locations)."""
+    s = text.lower().strip()
+    s = re.sub(r"[^\w\s\-&/]", " ", s)
+    s = re.sub(r"\s+", " ", s)
+
+    # 1) Direct alias hits
+    for alias, canonical in COMMON_LOCATION_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", s):
+            return canonical
+
+    # 2) Direct canonical hits, prefer longer names first (e.g., 'tamil nadu' before 'tamil')
+    for loc in sorted(INDIAN_LOCATIONS, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(loc)}\b", s):
+            return loc
+
+    # 3) Fallback: fuzzy match on individual tokens against canonical set
+    try:
+        import difflib
+        tokens = set(s.split())
+        for tok in tokens:
+            # Check alias fuzzy match first
+            alias_match = difflib.get_close_matches(tok, COMMON_LOCATION_ALIASES.keys(), n=1, cutoff=0.85)
+            if alias_match:
+                return COMMON_LOCATION_ALIASES[alias_match[0]]
+            # Then canonical names (single tokens only)
+            canon_match = difflib.get_close_matches(tok, {w for w in INDIAN_LOCATIONS if ' ' not in w}, n=1, cutoff=0.88)
+            if canon_match:
+                return canon_match[0]
+    except Exception:
+        pass
+
+    return None
+
+def _remove_location(text: str, location: Optional[str] = None) -> str:
+    """Remove location tokens from text."""
+    if location is None:
+        location = _extract_location(text)
+    if location:
+        text = re.sub(r'\b' + re.escape(location) + r'\b', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def _minmax_normalize(scores: Dict[str, float]) -> Dict[str, float]:
+    """Min-max normalize scores to 0-1 range."""
+    if not scores or np is None:
+        return scores
+    vals = np.array(list(scores.values()), dtype=float)
+    vmin, vmax = float(vals.min()), float(vals.max())
+    if vmax == vmin:
+        return {k: 0.0 for k in scores}
+    return {k: (v - vmin) / (vmax - vmin) for k, v in scores.items()}
+
+
+# ============================================================================
+# CORE ENGINE CLASS
+# ============================================================================
 
 class EnhancedQueryEngine:
     def __init__(
         self,
         inputs_dir: str = "inputs",
         views_dir: str = "views",
-        model_name: str = "models/all-MiniLM-L6-v2",    # light, good default (local path)
-        llm_model_path: Optional[str] = None,     # optional llama.cpp, not required here
-        log_file: str = "query_log.jsonl",        # query logging file
-        intents_file: str = "intents_reference.json"  # intent patterns reference
+        model_name: str = "models/all-MiniLM-L6-v2",
+        llm_model_path: Optional[str] = None,
+        log_file: str = "query_log.jsonl",
+        intents_file: str = "intents_reference.json",
+        check_deps: bool = True
     ):
+        # Check dependencies on first initialization
+        if check_deps:
+            self.dependency_status = check_dependencies(verbose=True)
+        
         self.inputs_dir = Path(inputs_dir)
         self.views_dir  = Path(views_dir)
         self.index_dir  = self.views_dir / ".sem_index"
@@ -76,16 +233,20 @@ class EnhancedQueryEngine:
         self.log_file = Path(log_file)
 
         self._embedder_name = model_name
-        self._embedder: Optional["SentenceTransformer"] = None  # type: ignore
+        self._embedder: Optional["SentenceTransformer"] = None
         
-        # Load intent patterns from reference file
+        # Initialize BM25 cache
+        self._bm25 = None
+        self._bm25_company_ids = None
+        
+        # Load intent patterns
         self.intents = self._load_intents(intents_file)
 
-        # (Optional) local LLM can be wired later if you want synthesized answers.
+        # Optional LLM
         self.llm = None
         if llm_model_path:
             try:
-                from llama_cpp import Llama  # lazy import
+                from llama_cpp import Llama
                 self.llm = Llama(model_path=llm_model_path, n_ctx=4096, n_threads=max(1, os.cpu_count() or 4))
                 print(" LLM loaded for optional answer synthesis.")
             except Exception as e:
@@ -107,13 +268,12 @@ class EnhancedQueryEngine:
             print(f"  Error loading intent patterns: {e}")
             return {}
 
-    # -------------------- Public: Build & Query --------------------
+    # ==================== BUILD & QUERY ====================
 
     def build_semantic_index(self, force: bool = False) -> None:
-        """Build + persist embeddings over ALL views. Rebuilds only if CSV content hash changes."""
+        """Build + persist embeddings over ALL views."""
         if not TRANSFORMERS_AVAILABLE or np is None:
-            print("  sentence-transformers / numpy not available. Install with:")
-            print("    pip install sentence-transformers numpy")
+            print("  sentence-transformers / numpy not available.")
             return
 
         meta_info = self._collect_view_files()
@@ -129,7 +289,7 @@ class EnhancedQueryEngine:
                 return
 
         print(" Building semantic index from views...")
-        doc_index = self._build_company_corpus(meta_info)  # DataFrame with CompanyId, CompanyName, search_text
+        doc_index = self._build_company_corpus(meta_info)
         texts = doc_index["search_text"].tolist()
 
         self._ensure_embedder()
@@ -153,12 +313,14 @@ class EnhancedQueryEngine:
         print(f" Index built: {emb.shape[0]} companies × {emb.shape[1]} dims")
 
     def semantic_search_companies(self, query: str, top_k: int = 20) -> pd.DataFrame:
-        """Search via the prebuilt semantic index with industry-aware weighted scoring."""
+        """
+        Search with location as a filter (Option 4: Filter-based approach).
+        Location in query is treated as a hard filter, not a scoring factor.
+        """
         if not TRANSFORMERS_AVAILABLE or np is None:
-            print("  Semantic search unavailable; falling back to keyword contains search.")
+            print("  Semantic search unavailable; fallback to keyword.")
             return self._keyword_search(query)
 
-        # Ensure index ready
         self.build_semantic_index(force=False)
 
         E, doc_index = self._load_index()
@@ -166,69 +328,497 @@ class EnhancedQueryEngine:
             print("  Index missing/empty; fallback to keyword.")
             return self._keyword_search(query)
 
-        self._ensure_embedder()
-        qv = self._embedder.encode([query], show_progress_bar=False, convert_to_numpy=True)[0].astype("float32")
-        qv = qv / (np.linalg.norm(qv) + 1e-8)
-
-        sims = E @ qv  # cosine since rows are normalized
+        # Extract location from query - treat as filter
+        # BUT: Don't extract location if query is asking about a specific company
+        # (e.g., "Contact of MADHYA PRADESH BHARAT AGRO" - "MADHYA PRADESH" is part of company name)
+        query_lower = query.lower()
+        is_company_specific_query = any(keyword in query_lower for keyword in [
+            ' of ', ' for ', 'details of', 'address of', 'contact of', 'pan of', 
+            'cin of', 'gst of', 'email of', 'phone of', 'website of'
+        ])
         
-        # Get more candidates for reranking (top_k * 3 to allow filtering)
-        k_initial = max(50, int(top_k) * 3)
-        idx = np.argsort(sims)[::-1][:k_initial]
-        scores = sims[idx]
-
-        top = doc_index.iloc[idx].copy()
-        top["base_similarity"] = scores
-
-        # Join for display columns from CompanyDetail
+        if is_company_specific_query:
+            # Don't extract location - it might be part of the company name
+            query_location = None
+            query_content = query
+        else:
+            # Extract location for filtering
+            query_location = _extract_location(query)
+            query_content = _remove_location(query, query_location)
+        
+        print(f"\n[DEBUG] semantic_search_companies called")
+        print(f"[DEBUG] Company-specific query: {is_company_specific_query}")
+        print(f"[DEBUG] Extracted location: {query_location}")
+        print(f"[DEBUG] Content query: '{query_content}'")
+        
+        # Check if query mentions R&D/Test facilities - if so, we'll need to search more candidates
+        query_lower = query.lower()
+        rd_keywords = ['r&d', 'r & d', 'research and development', 'research & development', 'r&d facility', 'r&d facilities']
+        test_keywords = [
+            'test facility', 'test facilities', 'testing facility', 'testing facilities',
+            'test lab', 'test labs', 'testing lab', 'testing labs',
+            'having test', 'with test', 'test capabilit'  # Partial matches for broader detection
+        ]
+        has_rd_keyword = any(keyword in query_lower for keyword in rd_keywords)
+        has_test_keyword = any(keyword in query_lower for keyword in test_keywords)
+        
+        # Debug output
+        if has_rd_keyword:
+            matched_rd = [kw for kw in rd_keywords if kw in query_lower]
+            print(f"  R&D keywords detected: {matched_rd}")
+        if has_test_keyword:
+            matched_test = [kw for kw in test_keywords if kw in query_lower]
+            print(f"  Test facility keywords detected: {matched_test}")
+        
+        # Expand search space when filtering by facilities (since many will be filtered out)
+        # Use larger multiplier to ensure we find all companies with the specified facilities
+        search_multiplier = 50 if (has_rd_keyword or has_test_keyword) else 1
+        expanded_top_k = min(top_k * search_multiplier, 1000)  # Cap at 1000 to avoid performance issues
+        
+        if query_location:
+            print(f"  Location filter: {query_location}, Content query: '{query_content}'")
+        else:
+            print(f"  No location detected in query, searching all locations")
+        
+        if has_rd_keyword or has_test_keyword:
+            print(f"  R&D/Test facility query detected - expanding search to top {expanded_top_k} candidates")
+            print(f"  has_rd_keyword={has_rd_keyword}, has_test_keyword={has_test_keyword}")
+        
+        # Load company details for location filtering
         comp = self._load_company_detail()
-        # Ensure CompanyId is string for proper merge
-        top["CompanyId"] = top["CompanyId"].astype(str)
         comp["Id"] = comp["Id"].astype(str)
+        
+        # OPTION 4: Apply location filter FIRST if location specified
+        if query_location:
+            # Filter companies by location
+            location_mask = pd.Series(False, index=comp.index)
+            print(f"[DEBUG] Total companies before filter: {len(comp)}")
+            
+            for col in ["City", "State", "Address"]:
+                if col in comp.columns:
+                    # Direct string matching first (more reliable than extraction)
+                    direct_match = comp[col].str.lower().str.contains(query_location, case=False, na=False, regex=False)
+                    matches_this_col = direct_match.sum()
+                    print(f"[DEBUG] {col} direct matches: {matches_this_col}")
+                    location_mask |= direct_match
+                    
+                    # Also try extraction-based matching for normalized comparison
+                    comp_locations = comp[col].apply(lambda x: _extract_location(str(x)) if pd.notna(x) else None)
+                    extraction_matches = (comp_locations == query_location)
+                    matches_extraction = extraction_matches.sum()
+                    print(f"[DEBUG] {col} extraction matches: {matches_extraction}")
+                    location_mask |= extraction_matches
+            
+            filtered_comp = comp[location_mask]
+            
+            if filtered_comp.empty:
+                print(f"  No companies found in location: {query_location}")
+                return pd.DataFrame()
+            
+            print(f"  Filtered to {len(filtered_comp)} companies in {query_location}")
+            
+            # Filter doc_index and embeddings to only include companies in the location
+            filtered_company_ids = set(filtered_comp["Id"].astype(str))
+            doc_mask = doc_index["CompanyId"].astype(str).isin(filtered_company_ids)
+            doc_index_filtered = doc_index[doc_mask].copy()
+            E_filtered = E[doc_mask.values] if E is not None else None
+            
+            if doc_index_filtered.empty or E_filtered is None or E_filtered.shape[0] == 0:
+                print(f"  No indexed companies in location: {query_location}")
+                return pd.DataFrame()
+        else:
+            # No location filter - use full dataset
+            doc_index_filtered = doc_index
+            E_filtered = E
+
+        # ---- SEMANTIC SCORING (on filtered dataset) ----
+        self._ensure_embedder()
+        qv = self._embedder.encode([query_content], show_progress_bar=False, convert_to_numpy=True)[0].astype("float32")
+        qv = qv / (np.linalg.norm(qv) + 1e-8)
+        semantic_sims = E_filtered @ qv
+
+        # ---- KEYWORD SCORING (BM25 on filtered dataset) ----
+        # Rebuild BM25 on filtered corpus to ensure accurate scoring
+        keyword_scores = self._get_keyword_scores_filtered(query_content, doc_index_filtered)
+
+        # Combine scores using RAW values (not normalized) to preserve absolute relevance
+        semantic_dict = {doc_index_filtered.iloc[i]["CompanyId"]: float(semantic_sims[i]) for i in range(len(doc_index_filtered))}
+        
+        # Keep raw scores for filtering, but also compute normalized for display
+        semantic_norm = _minmax_normalize(semantic_dict)
+        keyword_norm = _minmax_normalize(keyword_scores)
+        
+        SEMANTIC_WEIGHT = 0.7
+        KEYWORD_WEIGHT = 0.3
+        
+        # Use RAW scores for ranking to maintain absolute relevance threshold
+        combined_scores = {}
+        for company_id in semantic_dict:
+            # Raw semantic similarity (cosine similarity, already 0-1 range)
+            sem_score_raw = semantic_dict.get(company_id, 0.0)
+            # Keyword scores need normalization since BM25 range varies
+            kw_score_norm = keyword_norm.get(company_id, 0.0)
+            # Combine: use raw semantic + normalized keyword
+            combined_scores[company_id] = SEMANTIC_WEIGHT * sem_score_raw + KEYWORD_WEIGHT * kw_score_norm
+        
+        # Get top candidates based on content relevance
+        # For facility queries, we need a larger candidate pool since we'll filter by actual facility data
+        # For other queries, use top_k
+        if has_rd_keyword or has_test_keyword:
+            # For facility queries: First, get ALL companies that have the specified facilities
+            # Then rank them by semantic relevance
+            # This ensures we don't miss companies just because their semantic score is low
+            candidate_limit = len(combined_scores)  # Include all companies initially
+            print(f"  Facility query detected - will search all {candidate_limit} companies then filter by facilities")
+        else:
+            # For non-facility queries: use top candidates based on semantic relevance
+            candidate_limit = expanded_top_k
+        
+        sorted_ids = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:candidate_limit]
+        
+        # Build results DataFrame
+        candidate_ids = [cid for cid, _ in sorted_ids]
+        score_map = dict(sorted_ids)
+        
+        top = doc_index_filtered[doc_index_filtered["CompanyId"].isin(candidate_ids)].copy()
+        top["similarity_score"] = top["CompanyId"].map(score_map)
+        top["semantic_score"] = top["CompanyId"].map(semantic_dict)  # Raw semantic score
+        top["keyword_score"] = top["CompanyId"].map(keyword_norm)   # Normalized keyword score
+
+        # Join with CompanyDetail for full info
+        top["CompanyId"] = top["CompanyId"].astype(str)
         res = top.merge(comp, left_on="CompanyId", right_on="Id", how="left")
         
-        # If CompanyName_x and CompanyName_y exist (duplicate columns), prioritize detail
         if "CompanyName_y" in res.columns:
             res["CompanyName"] = res["CompanyName_y"].fillna(res.get("CompanyName_x", ""))
             res = res.drop(columns=["CompanyName_x", "CompanyName_y"], errors="ignore")
 
-        # Apply industry-aware weighted scoring
-        res = self._apply_weighted_scoring(query, res)
+        # Add selection reason for transparency
+        res["selection_reason"] = ""
+        for idx in res.index:
+            row = res.loc[idx]
+            reasons = []
+            
+            if query_location:
+                reasons.append(f"Location: {query_location}")
+            
+            reasons.append(f"Semantic: {row.get('semantic_score', 0):.3f}")
+            reasons.append(f"Keyword: {row.get('keyword_score', 0):.3f}")
+            
+            res.at[idx, "selection_reason"] = " | ".join(reasons)
         
-        # Apply product keyword filtering for manufacturing/product queries
-        res = self._apply_product_filter(query, res)
+        # Apply DUAL threshold: require both good semantic AND combined scores
+        # This prevents keyword matching from boosting irrelevant results
+        # For R&D/facility queries, skip threshold filtering since we'll filter by actual facility data
+        if has_rd_keyword or has_test_keyword:
+            # No threshold filtering for facility queries - we'll filter by actual facilities
+            # This ensures we don't miss companies whose R&D info is only in facility data
+            print(f"  Skipping semantic threshold for R&D/facility query (will filter by actual facilities)")
+        else:
+            semantic_threshold = 0.3  # Require reasonable semantic match
+            combined_threshold = 0.25   # Combined score threshold
+            # Filter by BOTH thresholds for non-facility queries
+            res = res[
+                (res["semantic_score"] >= semantic_threshold) & 
+                (res["similarity_score"] >= combined_threshold)
+            ]
+        # Don't limit to top_k yet if we're going to apply facility filter
+        if not (has_rd_keyword or has_test_keyword):
+            res = res.nlargest(top_k, "similarity_score")
         
-        # Filter by threshold and take top_k
-        threshold = 0.55  # Minimum weighted score (increased from 0.3)
-        res = res[res["weighted_score"] >= threshold]
-        res = res.nlargest(top_k, "weighted_score")
+        # POST-FILTER: If query explicitly mentions R&D/Test facilities, filter to only companies with those facilities
         
-        # Keep both scores for transparency
-        res["similarity_score"] = res["weighted_score"]
+        if has_rd_keyword or has_test_keyword:
+            # Load facility data to filter
+            try:
+                # Collect company IDs from all applicable facility types
+                rd_company_ids = None
+                test_company_ids = None
+                
+                if has_rd_keyword:
+                    rd_fac_path = self.views_dir / "RDFacilityDetails.csv"
+                    if rd_fac_path.exists():
+                        rd_fac = pd.read_csv(rd_fac_path, dtype=str)
+                        
+                        # Content-aware filtering: match query keywords to R&D categories
+                        # Extract meaningful keywords from query (exclude common words)
+                        query_keywords = set()
+                        stop_words = {'companies', 'company', 'doing', 'having', 'with', 'for', 'in', 'at', 'the', 'a', 'an',
+                                     'r&d', 'research', 'development', 'facility', 'facilities', 'and', 'both'}
+                        for word in query_content.lower().split():
+                            word = word.strip('.,?!;:')
+                            if word and word not in stop_words and len(word) > 2:
+                                query_keywords.add(word)
+                        
+                        # Filter R&D facilities by matching keywords to RDCategoryName or RDSubCategoryName
+                        if query_keywords:
+                            # Create a mask for facilities that match the query keywords
+                            facility_mask = pd.Series(False, index=rd_fac.index)
+                            for keyword in query_keywords:
+                                facility_mask |= rd_fac['RDCategoryName'].str.contains(keyword, case=False, na=False)
+                                facility_mask |= rd_fac['RDSubCategoryName'].str.contains(keyword, case=False, na=False)
+                            
+                            rd_fac_filtered = rd_fac[facility_mask]
+                            
+                            if not rd_fac_filtered.empty:
+                                rd_company_ids = set(rd_fac_filtered['CompanyMaster_FK_ID'].unique())
+                                print(f"  R&D filter: matched '{', '.join(query_keywords)}' in R&D categories")
+                            else:
+                                # Fallback to all R&D facilities if no keyword match
+                                rd_company_ids = set(rd_fac['CompanyMaster_FK_ID'].unique())
+                                print(f"  R&D filter: no specific match, using all R&D facilities")
+                        else:
+                            # No keywords extracted, use all R&D facilities
+                            rd_company_ids = set(rd_fac['CompanyMaster_FK_ID'].unique())
+                            print(f"  R&D filter: using all R&D facilities")
+                
+                if has_test_keyword:
+                    test_fac_path = self.views_dir / "TestFacilityDetails.csv"
+                    if test_fac_path.exists():
+                        test_fac = pd.read_csv(test_fac_path, dtype=str)
+                        
+                        # Content-aware filtering: match query keywords to facility categories
+                        # Extract meaningful keywords from query (exclude common words)
+                        query_keywords = set()
+                        stop_words = {'companies', 'company', 'having', 'with', 'for', 'in', 'at', 'the', 'a', 'an', 
+                                     'testing', 'test', 'facility', 'facilities', 'r&d', 'research', 'development'}
+                        for word in query_content.lower().split():
+                            word = word.strip('.,?!;:')
+                            if word and word not in stop_words and len(word) > 2:
+                                query_keywords.add(word)
+                        
+                        # Filter test facilities by matching keywords to CategoryName or SubCategoryName
+                        if query_keywords:
+                            # Create a mask for facilities that match the query keywords
+                            facility_mask = pd.Series(False, index=test_fac.index)
+                            for keyword in query_keywords:
+                                facility_mask |= test_fac['CategoryName'].str.contains(keyword, case=False, na=False)
+                                facility_mask |= test_fac['SubCategoryName'].str.contains(keyword, case=False, na=False)
+                                facility_mask |= test_fac['TestDetails'].str.contains(keyword, case=False, na=False)
+                            
+                            test_fac_filtered = test_fac[facility_mask]
+                            
+                            if not test_fac_filtered.empty:
+                                test_company_ids = set(test_fac_filtered['CompanyMaster_FK_ID'].unique())
+                                print(f"  Test filter: matched '{', '.join(query_keywords)}' in test categories")
+                            else:
+                                # Fallback to all test facilities if no keyword match
+                                test_company_ids = set(test_fac['CompanyMaster_FK_ID'].unique())
+                                print(f"  Test filter: no specific match, using all test facilities")
+                        else:
+                            # No keywords extracted, use all test facilities
+                            test_company_ids = set(test_fac['CompanyMaster_FK_ID'].unique())
+                            print(f"  Test filter: using all test facilities")
+                
+                # Combine filters based on what was requested
+                initial_count = len(res)
+                
+                if rd_company_ids is not None and test_company_ids is not None:
+                    # BOTH R&D and Test mentioned - check if query wants AND or OR
+                    # Look for explicit "and"/"both" vs "or"
+                    query_lower_check = query_content.lower()
+                    if 'and' in query_lower_check or 'both' in query_lower_check:
+                        # AND logic: companies must have BOTH R&D and Test facilities
+                        combined_ids = rd_company_ids.intersection(test_company_ids)
+                        print(f"  Combined filter (AND): Companies with BOTH R&D and Test facilities")
+                    else:
+                        # OR logic (default): companies with EITHER R&D or Test facilities
+                        combined_ids = rd_company_ids.union(test_company_ids)
+                        print(f"  Combined filter (OR): Companies with R&D OR Test facilities")
+                    
+                    res = res[res['Id'].astype(str).isin(combined_ids)]
+                    filtered_count = len(res)
+                    print(f"  Facility filter applied: {initial_count} → {filtered_count} companies")
+                    
+                elif rd_company_ids is not None:
+                    # Only R&D filter
+                    res = res[res['Id'].astype(str).isin(rd_company_ids)]
+                    filtered_count = len(res)
+                    print(f"  R&D filter applied: {initial_count} → {filtered_count} companies")
+                    
+                elif test_company_ids is not None:
+                    # Only Test filter
+                    res = res[res['Id'].astype(str).isin(test_company_ids)]
+                    filtered_count = len(res)
+                    print(f"  Test filter applied: {initial_count} → {filtered_count} companies")
+                
+                # For facility queries, return ALL matching companies (don't limit to top_k)
+                if len(res) > 0:
+                    print(f"  Returning all {len(res)} companies with specified facilities (not limited to top_k={top_k})")
+            except Exception as e:
+                print(f"  Warning: Could not apply facility filter: {e}")
+            
+            # For facility queries, return ALL results sorted by score (don't limit to top_k)
+            # This ensures users get all companies with the specified facilities
+            res = res.sort_values("similarity_score", ascending=False)
 
         return res
 
+    def _get_keyword_scores(self, query: str, doc_index: pd.DataFrame) -> Dict[str, float]:
+        """Get BM25 keyword scores - cached version for full corpus."""
+        qn = query.lower().strip()
+        qn = re.sub(r"[^\w\s\-&/]", " ", qn)
+        qn = re.sub(r"\s+", " ", qn).strip()
+        
+        if not hasattr(self, '_bm25') or self._bm25 is None:
+            if HAVE_BM25:
+                corpus_texts = doc_index["search_text"].tolist()
+                corpus_tokens = []
+                for text in corpus_texts:
+                    tn = text.lower().strip()
+                    tn = re.sub(r"[^\w\s\-&/]", " ", tn)
+                    tn = re.sub(r"\s+", " ", tn).strip()
+                    corpus_tokens.append(tn.split())
+                
+                self._bm25 = BM25Okapi(corpus_tokens)
+                self._bm25_company_ids = doc_index["CompanyId"].tolist()
+            else:
+                return {}
+        
+        query_tokens = qn.split()
+        scores = self._bm25.get_scores(query_tokens)
+        
+        return {
+            self._bm25_company_ids[i]: float(scores[i]) 
+            for i in range(len(scores))
+        }
+    
+    def _get_keyword_scores_filtered(self, query: str, doc_index: pd.DataFrame) -> Dict[str, float]:
+        """Get BM25 keyword scores - always rebuild for filtered corpus."""
+        if not HAVE_BM25:
+            return {}
+        
+        qn = query.lower().strip()
+        qn = re.sub(r"[^\w\s\-&/]", " ", qn)
+        qn = re.sub(r"\s+", " ", qn).strip()
+        
+        # Always rebuild BM25 on the filtered corpus
+        corpus_texts = doc_index["search_text"].tolist()
+        corpus_tokens = []
+        for text in corpus_texts:
+            tn = text.lower().strip()
+            tn = re.sub(r"[^\w\s\-&/]", " ", tn)
+            tn = re.sub(r"\s+", " ", tn).strip()
+            corpus_tokens.append(tn.split())
+        
+        bm25_filtered = BM25Okapi(corpus_tokens)
+        company_ids = doc_index["CompanyId"].tolist()
+        
+        query_tokens = qn.split()
+        scores = bm25_filtered.get_scores(query_tokens)
+        
+        return {
+            company_ids[i]: float(scores[i]) 
+            for i in range(len(scores))
+        }
+
+    def _filter_results_by_query(self, results: pd.DataFrame, query: str) -> pd.DataFrame:
+        """
+        Filter results to only include companies that match the query intent.
+        For company-specific queries (e.g., "Contact of ABC Corp"), return only matching companies.
+        """
+        if results.empty:
+            return results
+        
+        query_lower = query.lower()
+        
+        # Check if this is a company-specific query
+        is_company_specific = any(keyword in query_lower for keyword in [
+            ' of ', ' for ', 'details of', 'address of', 'contact of', 'pan of',
+            'cin of', 'gst of', 'email of', 'phone of', 'website of'
+        ])
+        
+        if not is_company_specific:
+            # Not a company-specific query - return all results
+            return results
+        
+        # Extract company name from query
+        # Try to find text after "of" or "for"
+        company_name_match = None
+        for pattern in [r'\bof\s+(.+?)(?:\s*$|\s*\?)', r'\bfor\s+(.+?)(?:\s*$|\s*\?)']:
+            match = re.search(pattern, query_lower, re.IGNORECASE)
+            if match:
+                company_name_match = match.group(1).strip()
+                break
+        
+        if not company_name_match:
+            # Couldn't extract company name - return all results
+            return results
+        
+        # Clean up the extracted company name
+        company_name_match = re.sub(r'\s+', ' ', company_name_match).strip()
+        
+        # Filter results to only include companies that match
+        if 'CompanyName' in results.columns:
+            # Tokenize the query company name
+            query_tokens = set(company_name_match.lower().split())
+            
+            # Score each result by how many tokens match
+            def match_score(company_name):
+                if pd.isna(company_name):
+                    return 0
+                company_tokens = set(str(company_name).lower().split())
+                # Count matching tokens
+                matches = len(query_tokens.intersection(company_tokens))
+                # Bonus for exact match
+                if company_name_match in str(company_name).lower():
+                    matches += 10
+                return matches
+            
+            results['_match_score'] = results['CompanyName'].apply(match_score)
+            
+            # Filter to only companies with at least 2 matching tokens (or exact match)
+            min_score = min(2, len(query_tokens))
+            filtered = results[results['_match_score'] >= min_score].copy()
+            
+            if not filtered.empty:
+                # Sort by match score (descending) and similarity score if available
+                sort_cols = ['_match_score']
+                if 'similarity_score' in filtered.columns:
+                    sort_cols.append('similarity_score')
+                
+                filtered = filtered.sort_values(
+                    sort_cols, 
+                    ascending=[False] * len(sort_cols)
+                )
+                filtered = filtered.drop('_match_score', axis=1)
+                
+                print(f"[DEBUG] Filtered from {len(results)} to {len(filtered)} companies matching '{company_name_match}'")
+                return filtered.head(5)  # Return top 5 matching companies
+            else:
+                # No good matches - return top result only
+                print(f"[DEBUG] No strong matches for '{company_name_match}', returning top result")
+                return results.head(1)
+        
+        return results
+
     def natural_language_query(self, question: str, top_k: int = 20) -> Dict[str, Any]:
-        """End-to-end NLQ (simple intent parse + semantic search + optional LLM answer)."""
+        """End-to-end NLQ."""
         start_time = datetime.now()
         
         intent = self._analyze_intent(question)
+        print(f"\n[DEBUG] Query: '{question}'")
+        print(f"[DEBUG] Detected intent: {intent}")
         
-        # For company attribute queries, do exact name lookup first
         if intent.get("intent") == "company_attribute":
             method = "exact_lookup"
-            results = self._lookup_company_by_name(intent.get("params", {}).get("company_name", ""))
-            # If no exact match found, fallback to semantic search
+            company_name = intent.get("params", {}).get("company_name", "")
+            print(f"[DEBUG] Looking up company: '{company_name}'")
+            results = self._lookup_company_by_name(company_name)
             if results.empty:
+                print(f"[DEBUG] Exact lookup failed, falling back to semantic search")
                 method = "semantic_search_fallback"
                 results = self.semantic_search_companies(question, top_k=top_k)
-        # For filter queries, apply CSV filters instead of semantic search
+            else:
+                print(f"[DEBUG] Found {len(results)} company match(es) via exact lookup")
         elif intent.get("intent") == "filter_list":
             method = "csv_filter"
             results = self._apply_csv_filter(intent, top_k)
         else:
             method = "semantic_search"
             results = self.semantic_search_companies(question, top_k=top_k)
+            # Apply post-filtering for company-specific queries
+            results = self._filter_results_by_query(results, question)
         
         if self.llm and not results.empty:
             answer = self._generate_answer_llm(question, results, intent)
@@ -240,7 +830,6 @@ class EnhancedQueryEngine:
         end_time = datetime.now()
         elapsed = (end_time - start_time).total_seconds()
         
-        # Log the query (log ALL results for debugging)
         self._log_query(
             question=question,
             intent=intent,
@@ -253,37 +842,42 @@ class EnhancedQueryEngine:
         
         return {"intent": intent, "results": results, "answer": answer, "count": len(results)}
     
+    # ==================== OTHER METHODS (unchanged) ====================
+    
     def _lookup_company_by_name(self, company_name: str) -> pd.DataFrame:
-        """Look up a company by exact or close name match - uses dbo.CompanyMaster.csv for complete data"""
-        # Use dbo.CompanyMaster.csv which has all columns including GST, CIN, etc.
-        master_path = self.inputs_dir / "dbo.CompanyMaster.csv"
-        if not master_path.exists():
-            # Fallback to CompanyDetail if master not available
-            df = self._load_company_detail()
-        else:
-            df = pd.read_csv(master_path, dtype=str).fillna("")
+        """
+        Lookup company by name or CompanyRef number.
+        Supports: company name, CompanyRef, partial matches
+        """
+        df = self._load_company_detail()
         
         if df.empty or not company_name:
             return pd.DataFrame()
         
-        # Try exact match first (case-insensitive)
-        exact_match = df[df["CompanyName"].str.lower() == company_name.lower()]
-        if not exact_match.empty:
-            return exact_match
+        # Try CompanyRef lookup first (if it looks like a ref number)
+        if "CompanyRef" in df.columns and (company_name.isdigit() or company_name.startswith("CB")):
+            ref_match = df[df["CompanyRef"].str.lower() == company_name.lower()]
+            if not ref_match.empty:
+                return ref_match
         
-        # Try contains match (case-insensitive)
-        contains_match = df[df["CompanyName"].str.contains(company_name, case=False, na=False, regex=False)]
-        if not contains_match.empty:
-            # If multiple matches, prefer the one that starts with the search term
-            starts_with = contains_match[contains_match["CompanyName"].str.lower().str.startswith(company_name.lower())]
-            if not starts_with.empty:
-                return starts_with.head(1)
-            return contains_match.head(1)
+        # Try exact company name match
+        if "CompanyName" in df.columns:
+            exact_match = df[df["CompanyName"].str.lower() == company_name.lower()]
+            if not exact_match.empty:
+                return exact_match
+            
+            # Try partial match
+            contains_match = df[df["CompanyName"].str.contains(company_name, case=False, na=False, regex=False)]
+            if not contains_match.empty:
+                starts_with = contains_match[contains_match["CompanyName"].str.lower().str.startswith(company_name.lower())]
+                if not starts_with.empty:
+                    return starts_with.head(1)
+                return contains_match.head(1)
         
         return pd.DataFrame()
     
     def _apply_csv_filter(self, intent: Dict[str, Any], limit: int = 100) -> pd.DataFrame:
-        """Apply direct CSV filtering based on intent parameters"""
+        """Apply direct CSV filtering."""
         df = self._load_company_detail()
         if df.empty:
             return df
@@ -292,23 +886,14 @@ class EnhancedQueryEngine:
         filter_type = params.get("filter_type", "")
         
         if filter_type == "government":
-            # Filter for government companies using CompanySubCategory
             mask = pd.Series(False, index=df.index)
-            
-            # Primary: Check CompanySubCategory (exclude "Non-government")
             if "CompanySubCategory" in df.columns:
-                # Match "Union government company" or "State government company" but NOT "Non-government company"
                 is_govt = df["CompanySubCategory"].str.contains("government company", case=False, na=False, regex=False)
                 not_non_govt = ~df["CompanySubCategory"].str.contains("non-government", case=False, na=False, regex=False)
                 mask |= (is_govt & not_non_govt)
-            
-            # Fallback: Check OrgType if available
             if "OrgType" in df.columns:
                 mask |= df["OrgType"].str.contains("government|public sector|psu", case=False, na=False, regex=True)
-            
             filtered = df[mask]
-            
-            # If location specified, further filter by State or City
             location = params.get("value", "").strip()
             if location and not filtered.empty:
                 location_mask = pd.Series(False, index=filtered.index)
@@ -316,94 +901,43 @@ class EnhancedQueryEngine:
                     location_mask |= filtered["State"].str.contains(location, case=False, na=False, regex=False)
                 if "City" in filtered.columns:
                     location_mask |= filtered["City"].str.contains(location, case=False, na=False, regex=False)
-                if "Address" in filtered.columns:
-                    location_mask |= filtered["Address"].str.contains(location, case=False, na=False, regex=False)
-                
                 filtered = filtered[location_mask]
-            
             return filtered.head(limit) if not filtered.empty else pd.DataFrame()
             
         elif filter_type == "defence":
-            # Filter for defence/defense companies
             mask = (
                 df["IndustryDomain"].str.contains("defence|defense|military|aerospace", case=False, na=False, regex=True) |
-                df["IndustrySubdomain"].str.contains("defence|defense|military|aerospace", case=False, na=False, regex=True) |
-                (df["DefencePlatforms"].str.len() > 0 if "DefencePlatforms" in df.columns else pd.Series(False, index=df.index))
+                df["IndustrySubdomain"].str.contains("defence|defense|military|aerospace", case=False, na=False, regex=True)
             )
-            filtered = df[mask].head(limit)
+            return df[mask].head(limit)
             
-        elif filter_type == "msme":
-            # Filter for MSME/Small/Medium companies based on Scale field (NOT company name)
-            mask = pd.Series(False, index=df.index)
-            
-            # Priority 1: Use Scale or CompanyScale field (official scale classification)
-            scale_cols = [c for c in ['Scale', 'CompanyScale', 'company_scale'] if c in df.columns]
-            for scale_col in scale_cols:
-                mask |= df[scale_col].str.contains("micro|small|medium", case=False, na=False, regex=True)
-            
-            # Priority 2: If no Scale data, use company_size_category
-            if not mask.any() and 'company_size_category' in df.columns:
-                mask |= df['company_size_category'].str.contains("micro|small|medium", case=False, na=False, regex=True)
-            
-            # Priority 3: Private/Non-government companies (MSMEs are typically private)
-            # But ONLY if they're not marked as "Large" or "Very Large"
-            if 'is_private_company' in df.columns:
-                private_mask = df['is_private_company'].astype(str).str.lower().isin(['true', '1'])
-                # Exclude Large companies
-                not_large_mask = pd.Series(True, index=df.index)
-                if 'company_size_category' in df.columns:
-                    not_large_mask = ~df['company_size_category'].str.contains("large", case=False, na=False, regex=True)
-                elif 'CompanyScale' in df.columns:
-                    not_large_mask = ~df['CompanyScale'].str.contains("large", case=False, na=False, regex=True)
-                
-                # Combine: private AND not large
-                potential_msme = private_mask & not_large_mask
-                mask |= potential_msme
-            
-            filtered = df[mask].head(limit) if mask.any() else pd.DataFrame()
-            
-            # Log what we found
-            if filtered.empty:
-                print("ℹ  No MSME companies found based on Scale field. Scale data may not be populated.")
-                
         elif filter_type == "location":
-            # Filter by location (city, state, or address)
             location = params.get("value", "").strip()
             if location:
                 mask = pd.Series(False, index=df.index)
-                if "City" in df.columns:
-                    mask |= df["City"].str.contains(location, case=False, na=False, regex=False)
-                if "State" in df.columns:
-                    mask |= df["State"].str.contains(location, case=False, na=False, regex=False)
-                if "Address" in df.columns:
-                    mask |= df["Address"].str.contains(location, case=False, na=False, regex=False)
-                filtered = df[mask].head(limit) if mask.any() else df.head(limit)
-            else:
-                filtered = df.head(limit)
-        else:
-            # Default: return top companies
-            filtered = df.head(limit)
+                for col in ["City", "State", "Address"]:
+                    if col in df.columns:
+                        mask |= df[col].str.contains(location, case=False, na=False, regex=False)
+                return df[mask].head(limit) if mask.any() else df.head(limit)
         
-        return filtered
-
-    # -------------------- Export (optional ZIP) --------------------
+        return df.head(limit)
 
     def export_results_zip(self, nlq_response: Dict[str, Any], out_zip: str) -> str:
-        """Writes answer.md, results.csv, meta.json to a ZIP file."""
+        """Export to ZIP."""
         results: pd.DataFrame = nlq_response.get("results", pd.DataFrame())
         answer  = str(nlq_response.get("answer", "") or "")
         intent  = nlq_response.get("intent", {})
 
-        out_zip = str(out_zip)
         with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
             z.writestr("answer.md", f"# Answer\n\n{answer}\n")
-            z.writestr("meta.json", json.dumps({"intent": intent, "count": int(len(results))}, ensure_ascii=False, indent=2))
+            z.writestr("meta.json", json.dumps({"intent": intent, "count": len(results)}, ensure_ascii=False, indent=2))
             if not results.empty:
-                buf = io.StringIO(); results.to_csv(buf, index=False)
+                buf = io.StringIO()
+                results.to_csv(buf, index=False)
                 z.writestr("results.csv", buf.getvalue())
         return out_zip
 
-    # -------------------- Internals: Views & Index --------------------
+    # ==================== INTERNALS ====================
 
     def _ensure_embedder(self):
         if self._embedder is None:
@@ -417,9 +951,13 @@ class EnhancedQueryEngine:
         vd = self.views_dir
         files = {
             "company": vd / "CompanyDetail.csv",
-            "cert":    vd / "Certification.csv",
-            "fac":     vd / "Facilities.csv",
+            "cert":    vd / "CertificationDetail.csv",
             "prod":    vd / "Products.csv",
+            # New detail views
+            "rd_facility": vd / "RDFacilityDetails.csv",
+            "test_facility": vd / "TestFacilityDetails.csv",
+            "product_details": vd / "ProductDetails.csv",
+            "turnover": vd / "TurnOverDetails.csv",
         }
         present = [str(p) for p in files.values() if p.exists()]
         return {"files": files, "files_present": present}
@@ -436,20 +974,23 @@ class EnhancedQueryEngine:
         return h.hexdigest()[:16]
 
     def _load_company_detail(self, nrows: Optional[int] = None) -> pd.DataFrame:
-        # Prefer CompanyDetailEnriched.csv (has inferred industries + aggregations)
-        # Falls back to CompanyDetail.csv, then dbo.CompanyMaster.csv
-        # nrows parameter: if specified, only read top N rows (useful for large files)
         p_enriched = self.views_dir / "CompanyDetailEnriched.csv"
         if p_enriched.exists():
             c = pd.read_csv(p_enriched, dtype=str, nrows=nrows).fillna("")
-            # CompanyDetailEnriched has many extra columns, but that's fine for our purposes
+            print(f"[DEBUG] Loaded from CompanyDetailEnriched.csv: {len(c)} rows")
         else:
             p = self.views_dir / "CompanyDetail.csv"
             if p.exists():
                 c = pd.read_csv(p, dtype=str, nrows=nrows).fillna("")
+                print(f"[DEBUG] Loaded from CompanyDetail.csv: {len(c)} rows")
             else:
                 p2 = self.views_dir / "dbo.CompanyMaster.csv"
-                c = pd.read_csv(p2, dtype=str, nrows=nrows).fillna("") if p2.exists() else pd.DataFrame()
+                if p2.exists():
+                    c = pd.read_csv(p2, dtype=str, nrows=nrows).fillna("")
+                    print(f"[DEBUG] Loaded from dbo.CompanyMaster.csv: {len(c)} rows")
+                else:
+                    c = pd.DataFrame()
+                    print(f"[DEBUG] No company data files found in {self.views_dir}")
                 if not c.empty and "Id" not in c.columns and "CompanyID" in c.columns:
                     c = c.rename(columns={"CompanyID": "Id"})
         return c
@@ -464,15 +1005,16 @@ class EnhancedQueryEngine:
         )
 
     def _build_company_corpus(self, meta: Dict[str, Any]) -> pd.DataFrame:
+        """Build corpus with location-aware processing."""
         C = self._load_company_detail()
         if C.empty:
-            raise RuntimeError("CompanyDetail.csv / dbo.CompanyMaster.csv not found or empty")
+            raise RuntimeError("CompanyDetail.csv not found")
 
         if "Id" not in C.columns:
             if "CompanyID" in C.columns:
                 C = C.rename(columns={"CompanyID": "Id"})
             else:
-                raise RuntimeError("No Id column found in company view")
+                raise RuntimeError("No Id column found")
 
         files = meta["files"]
         fk = "CompanyMaster_FK_ID"
@@ -480,264 +1022,186 @@ class EnhancedQueryEngine:
         def rd_csv(p: Path, nrows: Optional[int] = None) -> pd.DataFrame:
             return pd.read_csv(p, dtype=str, nrows=nrows).fillna("") if p.exists() else pd.DataFrame()
 
-        # For large datasets, limit rows when building index (can be overridden by caller)
-        Cert = rd_csv(files["cert"], nrows=None)
-        Fac  = rd_csv(files["fac"], nrows=None)
-        Prod = rd_csv(files["prod"], nrows=None)
+        Cert = rd_csv(files["cert"])
+        Prod = rd_csv(files["prod"])
+        RDFac = rd_csv(files["rd_facility"])
+        TestFac = rd_csv(files["test_facility"])
 
-        # Normalize FK where necessary
-        for df in (Cert, Fac, Prod):
+        for df in (Cert, Prod, RDFac, TestFac):
             if not df.empty and fk not in df.columns:
                 if "CompanyID" in df.columns:
                     df.rename(columns={"CompanyID": fk}, inplace=True)
+                elif "Company_FK_Id" in df.columns:
+                    df.rename(columns={"Company_FK_Id": fk}, inplace=True)
 
-        # Aggregations
-        cert_cols = [c for c in ["CertificationType", "Number", "Year"] if c in Cert.columns]
-        fac_cols  = [c for c in ["FacilityType","Category","SubCategory","FacilityName","Description","Equipment","Capability","Range"] if c in Fac.columns]
+        cert_cols = [c for c in ["CertificationType", "Number", "Year", "Cert_Type"] if c in Cert.columns]
         prod_cols = [c for c in ["ProductName","Category","Description"] if c in Prod.columns]
+        rd_fac_cols = [c for c in ["RDCategoryName","RDSubCategoryName"] if c in RDFac.columns]
+        test_fac_cols = [c for c in ["CategoryName","SubCategoryName","TestDetails"] if c in TestFac.columns]
 
         cert_agg = self._agg_join(Cert, fk, cert_cols) if cert_cols else pd.DataFrame(columns=[fk])
-        fac_agg  = self._agg_join(Fac,  fk, fac_cols)  if fac_cols  else pd.DataFrame(columns=[fk])
         prod_agg = self._agg_join(Prod, fk, prod_cols) if prod_cols else pd.DataFrame(columns=[fk])
+        rd_fac_agg = self._agg_join(RDFac, fk, rd_fac_cols) if rd_fac_cols else pd.DataFrame(columns=[fk])
+        test_fac_agg = self._agg_join(TestFac, fk, test_fac_cols) if test_fac_cols else pd.DataFrame(columns=[fk])
 
         view = C.copy()
         if not cert_agg.empty:
             view = view.merge(cert_agg.rename(columns={fk: "Id"}), on="Id", how="left")
-        if not fac_agg.empty:
-            view = view.merge(fac_agg.rename(columns={fk: "Id"}), on="Id", how="left")
         if not prod_agg.empty:
             view = view.merge(prod_agg.rename(columns={fk: "Id"}), on="Id", how="left")
+        if not rd_fac_agg.empty:
+            view = view.merge(rd_fac_agg.rename(columns={fk: "Id"}), on="Id", how="left")
+        if not test_fac_agg.empty:
+            view = view.merge(test_fac_agg.rename(columns={fk: "Id"}), on="Id", how="left")
 
-        # Weighted search text
         def pick(col): 
-            return view[col].astype(str) if col in view.columns else pd.Series("", index=view.index)
+            """Pick column and convert to string, replacing NaN with empty string"""
+            if col in view.columns:
+                return view[col].fillna("").astype(str)
+            else:
+                return pd.Series("", index=view.index)
+        
         name      = pick("CompanyName")
         city      = pick("City")
         state     = pick("State")
         addr      = pick("Address")
         domain    = pick("IndustryDomain") if "IndustryDomain" in view.columns else pick("Industry")
         subdomain = pick("IndustrySubdomain") if "IndustrySubdomain" in view.columns else pd.Series("", index=view.index)
-        comp_subcat = pick("CompanySubCategory")  # NEW: Include CompanySubCategory
+        comp_subcat = pick("CompanySubCategory")
         orgtype   = pick("OrgType")
-        cert_txt  = ("; " + pick("CertificationType") + " " + pick("Number") + " " + pick("Year")).fillna("")
-        fac_txt   = ("; " + pick("FacilityType") + " " + pick("Category") + " " + pick("SubCategory") + " " +
-                     pick("FacilityName") + " " + pick("Description") + " " + pick("Equipment") + " " +
-                     pick("Capability") + " " + pick("Range")).fillna("")
-        prod_txt  = ("; " + pick("ProductName") + " " + pick("Category") + " " + pick("Description")).fillna("")
+        
+        # Helper function to check if data is valid (not empty, not "nan")
+        def has_valid_data(x):
+            """Check if string has meaningful data (not empty, not 'nan')"""
+            if not x or pd.isna(x):
+                return False
+            x_clean = str(x).strip().lower()
+            # Check for various representations of empty/null
+            return x_clean and x_clean not in ['nan', 'none', 'null', '']
+        
+        # Build text fields - only add prefixes when data exists
+        cert_data = (pick("CertificationType") + " " + pick("Cert_Type") + " " + pick("Number") + " " + pick("Year")).str.strip()
+        cert_txt = cert_data.apply(lambda x: f"; {x}" if has_valid_data(x) else "")
+        
+        prod_data = (pick("ProductName") + " " + pick("Category") + " " + pick("Description")).str.strip()
+        prod_txt = prod_data.apply(lambda x: f"; {x}" if has_valid_data(x) else "")
+        
+        rd_fac_data = (pick("RDCategoryName") + " " + pick("RDSubCategoryName")).str.strip()
+        rd_fac_txt = rd_fac_data.apply(lambda x: f"; R&D Facility {x}" if has_valid_data(x) else "")
+        
+        test_fac_data = (pick("CategoryName") + " " + pick("SubCategoryName") + " " + pick("TestDetails")).str.strip()
+        test_fac_txt = test_fac_data.apply(lambda x: f"; Test Facility {x}" if has_valid_data(x) else "")
 
+        # Remove location tokens from search text
+        location_combined = (city + " " + state + " " + addr).fillna("")
+        location_removed = location_combined.apply(lambda x: _remove_location(x))
+        
         view["search_text"] = (
-            (name + " ").str.repeat(3) +  # strong boost
+            (name + " ").str.repeat(3) +
             (domain + " " + subdomain + " ").str.repeat(2) +
-            (comp_subcat + " " + orgtype + " ").str.repeat(2) +  # NEW: Boost CompanySubCategory and OrgType
-            (city + " " + state + " " + addr + " ") +
-            cert_txt + " " + fac_txt + " " + prod_txt
+            (comp_subcat + " " + orgtype + " ").str.repeat(2) +
+            location_removed + " " +
+            cert_txt + " " + 
+            (rd_fac_txt + " ").str.repeat(2) +  # Boost R&D facility weight
+            (test_fac_txt + " ").str.repeat(2) +  # Boost test facility weight
+            (prod_txt + " ").str.repeat(3)  # Boost product weight to match company name
         ).fillna("").str.replace(r"\s+", " ", regex=True).str.strip()
 
         return view[["Id", "CompanyName", "search_text"]].rename(columns={"Id": "CompanyId"}).fillna("")
 
-    def _load_index(self) -> Tuple[Optional["np.ndarray"], Optional[pd.DataFrame]]:  # type: ignore
+    def _load_index(self) -> Tuple[Optional["np.ndarray"], Optional[pd.DataFrame]]:
         emb_path = self.index_dir / "embeddings.npy"
         idx_path = self.index_dir / "doc_index.csv"
         if not (emb_path.exists() and idx_path.exists()):
             return None, None
-        E = np.load(emb_path).astype("float32") if np is not None else None  # type: ignore
+        E = np.load(emb_path).astype("float32") if np is not None else None
         D = pd.read_csv(idx_path, dtype=str).fillna("")
         return E, D
 
-    # -------------------- Fallbacks & Answers --------------------
-
-    def _apply_weighted_scoring(self, query: str, results: pd.DataFrame) -> pd.DataFrame:
-        """Apply industry-aware weighted scoring with selection reasons"""
-        if results.empty:
-            return results
-        
-        # Extract industry keywords from query
-        industry_keywords = {
-            'electrical': ['Electrical & Electronics'],
-            'electronics': ['Electrical & Electronics'],
-            'pharma': ['Pharmaceuticals'],
-            'pharmaceutical': ['Pharmaceuticals'],
-            'automotive': ['Automotive'],
-            'textile': ['Textiles'],
-            'steel': ['Steel & Metals'],
-            'metal': ['Steel & Metals'],
-            'chemical': ['Chemicals'],
-            'food': ['Food & Beverages'],
-            'software': ['IT & Software'],
-            'it': ['IT & Software'],
-            'defence': ['Aerospace & Defence'],
-            'defense': ['Aerospace & Defence'],
-            'aerospace': ['Aerospace & Defence'],
-            'plastic': ['Plastics'],
-            'machinery': ['Machinery & Equipment'],
-            'construction': ['Construction & Engineering'],
-        }
-        
-        query_lower = query.lower()
-        query_industries = set()
-        for keyword, industries in industry_keywords.items():
-            if keyword in query_lower:
-                query_industries.update(industries)
-        
-        # Extract location keywords
-        location_patterns = [
-            r'\b(pune|mumbai|bangalore|delhi|chennai|hyderabad|kolkata|ahmedabad|bhopal)\b'
-        ]
-        query_locations = set()
-        for pattern in location_patterns:
-            matches = re.findall(pattern, query_lower)
-            query_locations.update(matches)
-        
-        # Calculate weighted scores
-        results['industry_match'] = False
-        results['location_match'] = False
-        results['selection_reason'] = ''
-        
-        for idx in results.index:
-            row = results.loc[idx]
-            base_score = row.get('base_similarity', 0.5)
-            
-            reasons = []
-            bonuses = []
-            
-            # Industry matching (strong signal)
-            if 'IndustryDomain' in row.index and query_industries:
-                domain = str(row['IndustryDomain']).lower()
-                for industry in query_industries:
-                    if industry.lower() in domain:
-                        results.at[idx, 'industry_match'] = True
-                        bonuses.append(0.3)  # Strong boost for industry match
-                        reasons.append(f"Industry match: {row['IndustryDomain']}")
-                        break
-            
-            # Location matching
-            if query_locations:
-                location_found = False
-                for loc in query_locations:
-                    if (('City' in row.index and loc in str(row['City']).lower()) or
-                        ('State' in row.index and loc in str(row['State']).lower()) or
-                        ('Address' in row.index and loc in str(row['Address']).lower())):
-                        results.at[idx, 'location_match'] = True
-                        bonuses.append(0.15)  # Moderate boost for location
-                        reasons.append(f"Location match: {loc}")
-                        location_found = True
-                        break
-            
-            # Base similarity reason
-            if base_score > 0.4:
-                reasons.append(f"Base similarity: {base_score:.3f}")
-            
-            # Calculate final weighted score
-            total_bonus = sum(bonuses)
-            weighted = base_score + total_bonus
-            weighted = min(weighted, 1.0)  # Cap at 1.0
-            
-            results.at[idx, 'weighted_score'] = weighted
-            results.at[idx, 'selection_reason'] = ' | '.join(reasons) if reasons else f"Similarity: {base_score:.3f}"
-        
-        return results
-
-    def _apply_product_filter(self, query: str, results: pd.DataFrame) -> pd.DataFrame:
-        """
-        Filter results based on actual products from Products.csv.
-        For manufacturing queries (e.g., "drone manufacturing companies"),
-        keep only companies that either:
-        1. Have the product keyword in Products.csv, OR
-        2. Have the product keyword in their CompanyName
-        """
-        if results.empty:
-            return results
-        
-        # Extract product keywords from query
-        manufacturing_keywords = ['manufacturing', 'manufacturer', 'make', 'produce', 'supplier']
-        query_lower = query.lower()
-        
-        # Check if it's a manufacturing/product query
-        is_manufacturing_query = any(keyword in query_lower for keyword in manufacturing_keywords)
-        
-        if not is_manufacturing_query:
-            return results  # Not a product-specific query
-        
-        # Extract the product being asked about
-        # Common patterns: "drone manufacturing", "transformer manufacturer", etc.
-        product_patterns = [
-            r'(\w+)\s+manufactur',
-            r'(\w+)\s+supplier',
-            r'(\w+)\s+maker',
-            r'manufactur.*?(\w+)\s+compan',
-        ]
-        
-        product_keywords = []
-        for pattern in product_patterns:
-            matches = re.findall(pattern, query_lower)
-            product_keywords.extend(matches)
-        
-        # Clean up keywords (remove common words)
-        stopwords = {'the', 'a', 'an', 'of', 'in', 'for', 'and', 'or', 'to', 'from', 'companies', 'company'}
-        product_keywords = [k for k in product_keywords if k not in stopwords and len(k) > 2]
-        
-        if not product_keywords:
-            return results  # Couldn't identify product
-        
-        print(f"ℹ  Product filter activated for keywords: {product_keywords}")
-        
-        # Load Products.csv
-        products_path = self.views_dir / "Products.csv"
-        if not products_path.exists():
-            print("  Products.csv not found, skipping product filter")
-            return results
-        
-        try:
-            products_df = pd.read_csv(products_path, dtype=str).fillna("")
-            
-            # Find companies that have matching products
-            companies_with_product = set()
-            for keyword in product_keywords:
-                # Check ProductName and Description
-                mask = (
-                    products_df['ProductName'].str.contains(keyword, case=False, na=False, regex=False) |
-                    (products_df['Description'].str.contains(keyword, case=False, na=False, regex=False) 
-                     if 'Description' in products_df.columns else pd.Series(False, index=products_df.index))
-                )
-                matching_products = products_df[mask]
-                companies_with_product.update(matching_products['CompanyMaster_FK_ID'].unique())
-            
-            print(f"ℹ  Found {len(companies_with_product)} companies with matching products in Products.csv")
-            
-            # Filter results: Keep companies that either have matching products OR keyword in company name
-            mask = pd.Series(False, index=results.index)
-            
-            for idx in results.index:
-                row = results.loc[idx]
-                company_id = str(row.get('Id', ''))
-                company_name = str(row.get('CompanyName', '')).lower()
-                
-                # Check 1: Company has matching product in Products.csv
-                has_product = company_id in companies_with_product
-                
-                # Check 2: Company name contains the product keyword
-                has_keyword_in_name = any(keyword in company_name for keyword in product_keywords)
-                
-                # Keep if either condition is true
-                if has_product or has_keyword_in_name:
-                    mask.at[idx] = True
-            
-            filtered = results[mask]
-            
-            if not filtered.empty and len(filtered) < len(results):
-                removed = len(results) - len(filtered)
-                print(f"ℹ  Product filter removed {removed} companies without matching products")
-            
-            return filtered if not filtered.empty else results  # Return original if filter too aggressive
-            
-        except Exception as e:
-            print(f"  Product filter error: {e}, returning original results")
-            return results
-
     def _keyword_search(self, query: str) -> pd.DataFrame:
+        """Fallback keyword search with facility filtering support."""
+        print(f"[DEBUG] _keyword_search called with query: '{query}'")
+        
         c = self._load_company_detail()
+        print(f"[DEBUG] Loaded {len(c)} companies")
         if c.empty:
+            print("[DEBUG] Company data is empty!")
             return c
+        
+        # Check for facility keywords
+        query_lower = query.lower()
+        print(f"[DEBUG] query_lower: '{query_lower}'")
+        rd_keywords = ['r&d', 'r & d', 'research and development', 'research & development', 'r&d facility', 'r&d facilities']
+        test_keywords = [
+            'test facility', 'test facilities', 'testing facility', 'testing facilities',
+            'test lab', 'test labs', 'testing lab', 'testing labs',
+            'having test', 'with test', 'test capabilit'
+        ]
+        has_rd_keyword = any(keyword in query_lower for keyword in rd_keywords)
+        has_test_keyword = any(keyword in query_lower for keyword in test_keywords)
+        
+        # If facility query detected, filter by actual facility data instead of keyword matching
+        if has_rd_keyword or has_test_keyword:
+            print(f"  Keyword search: Facility query detected (R&D={has_rd_keyword}, Test={has_test_keyword})")
+            
+            rd_company_ids = None
+            test_company_ids = None
+            
+            # Extract content keywords (excluding facility-related words)
+            stop_words = {'companies', 'company', 'list', 'show', 'find', 'having', 'with', 'for', 'in', 'at', 'the', 'a', 'an',
+                         'r&d', 'research', 'development', 'testing', 'test', 'facility', 'facilities', 'and', 'both', 'or'}
+            query_keywords = set()
+            for word in query_lower.split():
+                word = word.strip('.,?!;:')
+                if word and word not in stop_words and len(word) > 2:
+                    query_keywords.add(word)
+            
+            if has_rd_keyword:
+                rd_fac_path = self.views_dir / "RDFacilityDetails.csv"
+                if rd_fac_path.exists():
+                    rd_fac = pd.read_csv(rd_fac_path, dtype=str)
+                    if query_keywords:
+                        facility_mask = pd.Series(False, index=rd_fac.index)
+                        for keyword in query_keywords:
+                            facility_mask |= rd_fac['RDCategoryName'].str.contains(keyword, case=False, na=False)
+                            facility_mask |= rd_fac['RDSubCategoryName'].str.contains(keyword, case=False, na=False)
+                        rd_fac_filtered = rd_fac[facility_mask] if facility_mask.any() else rd_fac
+                    else:
+                        rd_fac_filtered = rd_fac
+                    rd_company_ids = set(rd_fac_filtered['CompanyMaster_FK_ID'].unique())
+                    print(f"  R&D filter: {len(rd_company_ids)} companies")
+            
+            if has_test_keyword:
+                test_fac_path = self.views_dir / "TestFacilityDetails.csv"
+                if test_fac_path.exists():
+                    test_fac = pd.read_csv(test_fac_path, dtype=str)
+                    if query_keywords:
+                        facility_mask = pd.Series(False, index=test_fac.index)
+                        for keyword in query_keywords:
+                            facility_mask |= test_fac['CategoryName'].str.contains(keyword, case=False, na=False)
+                            facility_mask |= test_fac['SubCategoryName'].str.contains(keyword, case=False, na=False)
+                            facility_mask |= test_fac['TestDetails'].str.contains(keyword, case=False, na=False)
+                        test_fac_filtered = test_fac[facility_mask] if facility_mask.any() else test_fac
+                    else:
+                        test_fac_filtered = test_fac
+                    test_company_ids = set(test_fac_filtered['CompanyMaster_FK_ID'].unique())
+                    print(f"  Test filter: {len(test_company_ids)} companies")
+            
+            # Combine filters
+            if rd_company_ids is not None and test_company_ids is not None:
+                if 'and' in query_lower or 'both' in query_lower:
+                    combined_ids = rd_company_ids.intersection(test_company_ids)
+                    print(f"  Combined (AND): {len(combined_ids)} companies")
+                else:
+                    combined_ids = rd_company_ids.union(test_company_ids)
+                    print(f"  Combined (OR): {len(combined_ids)} companies")
+                return c[c['Id'].astype(str).isin(combined_ids)]
+            elif rd_company_ids is not None:
+                return c[c['Id'].astype(str).isin(rd_company_ids)]
+            elif test_company_ids is not None:
+                return c[c['Id'].astype(str).isin(test_company_ids)]
+        
+        # Default keyword search (non-facility queries)
         tokens = [t for t in re.split(r"[^a-z0-9]+", query.lower()) if t]
         mask = pd.Series(False, index=c.index)
         for col in c.columns:
@@ -747,94 +1211,88 @@ class EnhancedQueryEngine:
         return c[mask]
 
     def _analyze_intent(self, q: str) -> Dict[str, Any]:
-        """Analyze query intent using IntentHandler if available, otherwise fallback to legacy"""
+        """Analyze query intent."""
         if INTENT_HANDLER_AVAILABLE:
             try:
                 handler = IntentHandler("intents_reference.json")
                 return handler.analyze_query(q)
             except Exception as e:
-                print(f"  IntentHandler failed: {e}, using legacy detection")
+                print(f"  IntentHandler failed: {e}, using legacy")
         
-        # Legacy fallback (original code)
+        # Legacy fallback
         ql = q.lower()
         
-        # FIRST: Check for attribute queries (company-specific) - highest priority
+        # Company attribute queries
+        # Order matters: more specific patterns first
         attr_patterns = [
+            (r"(?:contact\s+)?(?:address|location)\s+(?:of|for)\s+(.+)", "address"),  # "contact address" or "address"
             (r"(?:contact|phone|email|details?)\s+(?:of|for)\s+(.+)", "contact"),
             (r"(?:pan|cin|gstin?|registration)\s+(?:of|for)\s+(.+)", "registration"),
             (r"(?:industry\s+type|industry|domain|sector)\s+(?:of|for)\s+(.+)", "industry"),
-            (r"(?:address|location)\s+(?:of|for)\s+(.+)", "address"),
-            (r"(?:city|state)\s+(?:of|for)\s+(.+)", "location"),
-            (r"(?:products?|services?)\s+(?:of|for)\s+(.+)", "products"),
-            (r"(?:certifications?)\s+(?:of|for)\s+(.+)", "certifications"),
-            (r"(?:facilities)\s+(?:of|for)\s+(.+)", "facilities"),
-            (r"(?:turnover|revenue)\s+(?:of|for)\s+(.+)", "turnover"),
-            (r"what\s+(?:is|are)\s+the\s+(.+?)\s+(?:of|for)\s+(.+)", "attribute"),
+            (r"(?:products?|services?)\s+(?:of|for|made\s+by|manufactured\s+by)\s+(.+)", "products"),
+            (r"(?:turnover|revenue|sales)\s+(?:of|for)\s+(.+)", "turnover"),
         ]
         
         for pattern, intent_type in attr_patterns:
             m = re.search(pattern, ql)
             if m:
-                if intent_type == "attribute":
-                    attr = m.group(1).strip()
-                    company = m.group(2).strip(" ?.," )
-                else:
-                    company = m.group(1).strip(" ?.," )
-                    attr = intent_type
-                return {"intent": "company_attribute", "params": {"company_name": company, "attribute": attr}}
+                company = m.group(1).strip(" ?.," )
+                return {"intent": "company_attribute", "params": {"company_name": company, "attribute": intent_type}}
         
-        industry_keywords = ['electrical', 'electronics', 'pharma', 'pharmaceutical', 'automotive', 'textile', 'steel', 'metal', 'chemical', 'food', 'software', 'it', 'defence', 'defense', 'aerospace', 'plastic', 'machinery', 'construction']
-        has_industry = any(keyword in ql for keyword in industry_keywords)
-        location_match = re.search(r"\b(?:in|from|at|based\s+in)\s+([a-zA-Z\s]+?)(?:\s|$)", ql)
-        has_location = location_match is not None
-        
-        if has_industry and has_location:
-            return {"intent": "generic", "params": {"industry_filter": True, "location_filter": True}}
-        if re.search(r"\b(government|govt)\b.*\bcompan", ql) or re.search(r"\bcompan.*\b(government|govt)\b", ql):
+        # Filter queries
+        if re.search(r"\b(government|govt)\b.*\bcompan", ql):
             return {"intent": "filter_list", "params": {"filter_type": "government", "field": "subcategory"}}
-        if re.search(r"\b(list|show|find|get)\b.*(defence|defense)", ql) and not has_industry:
+        if re.search(r"\b(list|show|find|get)\b.*(defence|defense)", ql):
             return {"intent": "filter_list", "params": {"filter_type": "defence", "field": "domain"}}
-        if re.search(r"\b(msme|micro|small|medium)\b", ql):
-            return {"intent": "filter_list", "params": {"filter_type": "msme", "field": "scale"}}
-        if has_location and not has_industry:
+        
+        # Location-only queries (no domain/product keywords) -> use filter_list
+        # Location + domain/product queries -> use semantic search for better relevance
+        location_match = re.search(r"\b(?:in|from|at|based\s+in)\s+([a-zA-Z\s]+?)(?:\s|$)", ql)
+        if location_match:
             location = location_match.group(1).strip()
-            if location.lower() not in ["india", "the", "a", "an", "all", "any"]:
-                return {"intent": "filter_list", "params": {"filter_type": "location", "field": "location", "value": location}}
+            if location.lower() not in ["india", "the", "a", "an"]:
+                # Check if query also contains domain/product keywords
+                has_domain_keywords = bool(re.search(
+                    r"\b(making|manufacturing|producing|companies?|firms?|manufacturers?|" +
+                    r"drone|uav|uas|aerospace|defence|defense|electronics|software|" +
+                    r"pharma|chemical|textile|automotive|food|beverage)\b", ql
+                ))
+                
+                if has_domain_keywords:
+                    # Route to semantic search which handles location filtering properly
+                    return {"intent": "generic", "params": {}}
+                else:
+                    # Pure location query - use CSV filter
+                    return {"intent": "filter_list", "params": {"filter_type": "location", "field": "location", "value": location}}
         
         return {"intent": "generic", "params": {}}
 
     def _generate_answer_simple(self, question: str, results: pd.DataFrame, intent: Dict[str, Any]) -> str:
+        """Generate simple text answer."""
         if results is None or results.empty:
             return "I couldn't find matching companies."
         
-        # Handle company attribute queries specifically
+        # Company attribute queries
         if intent.get("intent") == "company_attribute":
             company_name = intent.get("params", {}).get("company_name", "")
             attribute = intent.get("params", {}).get("attribute", "")
             
-            # Try to find exact or close match by company name
             if company_name and not results.empty:
-                # Case-insensitive match
                 company_col = "CompanyName" if "CompanyName" in results.columns else "Name"
                 if company_col in results.columns:
                     mask = results[company_col].str.contains(company_name, case=False, na=False, regex=False)
                     if mask.any():
                         company_row = results[mask].iloc[0]
                         
-                        # Map attribute to column names (case-sensitive - match actual CSV columns)
                         attr_map = {
-                            "registration": ["Pan", "CIN", "CINNumber", "GSTIN", "GST", "GSTNumber", "RegistrationDate"],
-                            "contact": ["Phone", "EmailId", "Website", "POC_Email"],
-                            "industry": ["IndustryDomain", "Industry", "Domain", "IndustrySubdomain"],
-                            "address": ["Address", "CityName", "State", "District", "Pincode"],
-                            "location": ["CityName", "State", "Address", "District", "Pincode"],
-                            "products": ["ProductName", "Products"],
-                            "certifications": ["CertificationType", "Certifications"],
-                            "facilities": ["FacilityType", "FacilityName"],
-                            "turnover": ["TurnOver", "Revenue"],
+                            "registration": ["Pan", "CINNumber", "GSTNumber", "CompanyRefNo"],
+                            "contact": ["Phone", "EmailId", "POC_Email", "Website"],
+                            "industry": ["IndustryDomainName", "IndustrySubDomainName", "CompanyIndustrialClassification"],
+                            "address": ["Address", "CityName", "State", "District", "Pincode", "CountryName"],
+                            "products": ["CoreExpertiseName", "OtherCompanyCoreExpertise"],
+                            "turnover": ["CompanyScale", "OtherScale"],  # Turnover data if available
                         }
                         
-                        # Find matching columns
                         cols_to_show = attr_map.get(attribute, [])
                         found_data = {}
                         
@@ -843,83 +1301,71 @@ class EnhancedQueryEngine:
                                 found_data[col] = str(company_row[col])
                         
                         if found_data:
-                            lines = [f"For {company_row.get(company_col, company_name)}:"]
+                            company_display_name = company_row.get(company_col, company_name)
+                            lines = [f"**{company_display_name}**\n"]
                             for col, val in found_data.items():
-                                lines.append(f"  {col}: {val}")
+                                lines.append(f"- **{col}**: {val}")
                             return "\n".join(lines)
                         else:
-                            # No data found for the requested attribute, show what we have
-                            lines = [f"For {company_row.get(company_col, company_name)}:"]
-                            lines.append(f"    {attribute.title()} information not available in database")
-                            # Show other available fields
-                            other_fields = {}
-                            for col in ["CityName", "State", "Address", "OrgType", "Scale", "CoreExpertise"]:
-                                if col in company_row.index and pd.notna(company_row[col]) and str(company_row[col]).strip():
-                                    other_fields[col] = str(company_row[col])
-                            if other_fields:
-                                lines.append("  Available information:")
-                                for col, val in other_fields.items():
-                                    lines.append(f"    {col}: {val}")
-                            return "\n".join(lines)
+                            # No data found for requested attribute
+                            return f"No {attribute} information found for {company_row.get(company_col, company_name)}."
+                    else:
+                        # Company not found in results
+                        return f"Company '{company_name}' not found."
         
-        # Default: show ALL matches (not just top 10)
-        cols = [c for c in ["CompanyRefNo","CompanyName","City","State","IndustryDomain"] if c in results.columns]
-        if not cols:
-            cols = [c for c in results.columns if c not in ["search_text", "similarity_score"]][:4]
+        # For list queries, show count and top results
+        count = len(results)
+        if count == 0:
+            return "No matching companies found."
         
-        # Show all results instead of just top 10
-        lines = [f"Found {len(results)} matching companies:"]
-        for _, row in results[cols].iterrows():
-            parts = [f"{c}: {row[c]}" for c in cols if pd.notna(row.get(c)) and str(row[c]).strip()]
-            lines.append(" - " + " | ".join(parts))
+        lines = [f"Found {count} matching companies:\n"]
+        for idx, row in results.head(10).iterrows():
+            name = row.get('CompanyName', 'N/A')
+            state = row.get('State', 'N/A')
+            domain = row.get('IndustryDomainName', row.get('IndustryDomain', 'N/A'))
+            city = row.get('CityName', row.get('City', ''))
+            location = f"{city}, {state}" if city and city != 'N/A' else state
+            lines.append(f"- **{name}** | Location: {location} | Domain: {domain}")
+        
         return "\n".join(lines)
 
     def _generate_answer_llm(self, question: str, results: pd.DataFrame, intent: Dict[str, Any]) -> str:
-        """Generate answer with brief 2-line LLM summary + full results list"""
+        """Generate LLM answer."""
         if not self.llm or results.empty:
             return self._generate_answer_simple(question, results, intent)
         
-        # Get the simple answer (full list)
         full_answer = self._generate_answer_simple(question, results, intent)
         
-        # Create a brief summary from top results for LLM context
         top_5 = results.head(5)
         summary_data = []
         for _, row in top_5.iterrows():
             company = row.get("CompanyName", "Unknown")
             state = row.get("State", "")
-            domain = row.get("IndustryDomain", "")
+            domain = row.get("IndustryDomainName", row.get("IndustryDomain", ""))
             summary_data.append(f"{company} ({state}, {domain})")
         
         context = " | ".join(summary_data)
         
-        # Prompt for 2-line summary
         prompt = f"""Question: {question}
-Found {len(results)} companies. Top companies: {context}
+Found {len(results)} companies. Top: {context}
 
-Write ONLY a 2-line summary (max 150 characters total). Be direct and factual.
+Write 2-line summary (max 150 chars). Be direct.
 Summary:"""
         
         try:
-            # Generate brief summary
-            response = self.llm(prompt, max_tokens=100, temperature=0.3, stop=["\n\n", "Question:", "Found:"])
+            response = self.llm(prompt, max_tokens=100, temperature=0.3, stop=["\n\n"])
             summary = response.get("choices", [{}])[0].get("text", "").strip()
-            
-            # Clean up and limit to 2 lines
             summary_lines = [line.strip() for line in summary.split("\n") if line.strip()][:2]
             brief_summary = "\n".join(summary_lines)
-            
-            # Combine: LLM summary + full list
             return f"{brief_summary}\n\n{full_answer}"
         except Exception as e:
-            print(f"  LLM summary failed: {e}")
-            # Fallback to simple answer
+            print(f"  LLM failed: {e}")
             return full_answer
     
     def _log_query(self, question: str, intent: Dict[str, Any], method: str, 
                    answer_method: str, results_count: int, elapsed_time: float,
                    top_results: pd.DataFrame) -> None:
-        """Log query details to JSONL file for offline analysis"""
+        """Log query to JSONL."""
         log_entry = {
             "timestamp": datetime.now().isoformat(),
             "question": question,
@@ -932,60 +1378,55 @@ Summary:"""
             "top_results": []
         }
         
-        # Add ALL results with reasoning (for debugging)
         if not top_results.empty:
-            cols_to_log = ["CompanyName", "IndustryDomain", "IndustryDomain_Source", 
-                          "City", "State", "ProductNames_Sample"]
+            cols_to_log = ["CompanyName", "IndustryDomainName", "CityName", "State"]
             
-            for idx, (_, row) in enumerate(top_results.iterrows(), 1):
+            for idx, (_, row) in enumerate(top_results.head(10).iterrows(), 1):
                 result_entry = {"rank": idx}
                 for col in cols_to_log:
                     if col in row.index:
                         val = str(row[col])[:200] if pd.notna(row[col]) else ""
                         result_entry[col] = val
+                    # Fallback to old column names if new ones don't exist
+                    elif col == "IndustryDomainName" and "IndustryDomain" in row.index:
+                        val = str(row["IndustryDomain"])[:200] if pd.notna(row["IndustryDomain"]) else ""
+                        result_entry[col] = val
+                    elif col == "CityName" and "City" in row.index:
+                        val = str(row["City"])[:200] if pd.notna(row["City"]) else ""
+                        result_entry[col] = val
                 
-                # Add explanation for why this result was selected
-                if method == "csv_filter":
-                    filter_type = intent.get("params", {}).get("filter_type", "")
-                    if filter_type == "defence":
-                        result_entry["selection_reason"] = f"IndustryDomain contains defence/aerospace: {row.get('IndustryDomain', '')}"
-                    elif filter_type == "msme":
-                        result_entry["selection_reason"] = "Company name or type matches MSME/Micro/Small/Medium keywords"
-                    elif filter_type == "location":
-                        location = intent.get("params", {}).get("value", "")
-                        result_entry["selection_reason"] = f"Location matches: {location}"
-                elif method == "semantic_search":
-                    similarity = row.get("similarity_score", "N/A")
-                    result_entry["selection_reason"] = f"Semantic similarity score: {similarity}"
+                if "selection_reason" in row.index:
+                    result_entry["selection_reason"] = str(row["selection_reason"])
                 
                 log_entry["top_results"].append(result_entry)
         
-        # Append to log file (JSONL format - one JSON object per line)
         try:
             with open(self.log_file, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
         except Exception as e:
-            print(f"  Warning: Could not write to log file: {e}")
+            print(f"  Warning: Could not write to log: {e}")
 
 
-# --------------------------- CLI ---------------------------
+# ============================================================================
+# CLI
+# ============================================================================
 
 def _cli():
-    ap = argparse.ArgumentParser(description="Enhanced Query Engine (embeddings-first)")
+    ap = argparse.ArgumentParser(description="Enhanced Query Engine with Location-Aware Matching")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p_idx = sub.add_parser("index", help="Build semantic index from views")
-    p_idx.add_argument("--views", default="views", help="Path to views directory")
-    p_idx.add_argument("--model", default="models/all-MiniLM-L6-v2", help="Sentence-Transformers model name or local path")
-    p_idx.add_argument("--force", action="store_true", help="Force rebuild even if up-to-date")
+    p_idx = sub.add_parser("index", help="Build semantic index")
+    p_idx.add_argument("--views", default="views", help="Views directory")
+    p_idx.add_argument("--model", default="models/all-MiniLM-L6-v2", help="Model path")
+    p_idx.add_argument("--force", action="store_true", help="Force rebuild")
 
-    p_q = sub.add_parser("query", help="Query the semantic index")
-    p_q.add_argument("--views", default="views", help="Path to views directory")
+    p_q = sub.add_parser("query", help="Query the index")
+    p_q.add_argument("--views", default="views", help="Views directory")
     p_q.add_argument("--ask", required=True, help="Natural language query")
-    p_q.add_argument("--model", default="models/all-MiniLM-L6-v2", help="Sentence-Transformers model name or local path")
-    p_q.add_argument("--llm", default="", help="Optional: Path to LLM model file (llama.cpp compatible)")
+    p_q.add_argument("--model", default="models/all-MiniLM-L6-v2", help="Model path")
+    p_q.add_argument("--llm", default="", help="Optional LLM path")
     p_q.add_argument("--top-k", type=int, default=20, help="Top K results")
-    p_q.add_argument("--zip-out", default="", help="Optional: write answer+results to ZIP")
+    p_q.add_argument("--zip-out", default="", help="Output ZIP file")
 
     args = ap.parse_args()
 
@@ -996,17 +1437,22 @@ def _cli():
         llm_path = args.llm if args.llm else None
         eng = EnhancedQueryEngine(views_dir=args.views, model_name=args.model, llm_model_path=llm_path)
         resp = eng.natural_language_query(args.ask, top_k=args.top_k)
-        # Pretty print summary to console
-        print("\n=== ANSWER ===\n" + resp["answer"] + "\n")
+        
+        print("\n=== ANSWER ===")
+        print(resp["answer"])
+        print()
+        
         if isinstance(resp["results"], pd.DataFrame) and not resp["results"].empty:
-            cols = [c for c in ["CompanyRefNo","CompanyName","City","State","IndustryDomain","similarity_score"] if c in resp["results"].columns]
+            cols = [c for c in ["CompanyName","City","State","IndustryDomain","similarity_score"] 
+                    if c in resp["results"].columns]
             print(resp["results"][cols].to_string(index=False))
         else:
-            print("No rows.")
+            print("No results.")
+        
         if args.zip_out:
             out_path = Path(args.zip_out).resolve()
             eng.export_results_zip(resp, str(out_path))
-            print(f"\n Wrote ZIP: {out_path}")
+            print(f"\n✓ Wrote ZIP: {out_path}")
 
 if __name__ == "__main__":
     _cli()

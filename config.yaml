@@ -1,0 +1,36 @@
+# InsightDB SSO & Session Configuration
+# This file contains all session and SSO-related settings
+# Environment variables will override these defaults if set
+
+# Production URLs - Change these for your deployment
+urls:
+  login: "https://login.connectbeacon.com"
+  chatbot: "https://chat.connectbeacon.com/aichat"
+  chatbot_sso: "https://chat.connectbeacon.com/aichat/sso"
+
+# SSO Configuration
+sso:
+  # Shared secret for SSO token verification (REQUIRED - must be set via env or here)
+  # For security, prefer setting via SSO_SHARED_SECRET environment variable
+  secret: null  # Set via SSO_SHARED_SECRET env var
+  expect_issuer: "ddpdashboard-aichatbot-portal"
+  expect_audience: "aichat"
+  portal_url: "http://127.0.0.1:7000/askme-sso"
+
+# Cookie Configuration
+cookie:
+  name: "aichat_sid"
+  domain: null  # null = current domain only
+  secure: true  # true for HTTPS, false for HTTP
+  samesite: "Lax"  # Lax, Strict, or None
+  path: "/aichat"
+
+# Session Timeouts (in seconds)
+session:
+  ttl_idle: 1800    # 30 minutes - session expires after this period of inactivity
+  ttl_absolute: 28800  # 8 hours - maximum session duration regardless of activity
+
+# Redis Configuration
+redis:
+  url: "redis://127.0.0.1:6379/0"
+  use_fake_redis: true  # true = use fakeredis (in-memory), false = use real Redis

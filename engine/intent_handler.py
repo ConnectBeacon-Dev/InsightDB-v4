@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Intent Handler for Natural Language Queries
-Uses intents_reference.json to map queries to filters and ETL columns
+Simplified Intent Handler for Natural Language Queries
+Only handles location and classification filters - everything else uses semantic search
 """
 
 import re
@@ -18,7 +18,7 @@ except ImportError:
 
 
 class IntentHandler:
-    """Handles intent detection and parameter extraction from natural language queries"""
+    """Simplified intent handler - only location and classification filters"""
     
     def __init__(self, intents_file: str = "intents_reference.json"):
         """Initialize with intent patterns from JSON file"""
@@ -40,81 +40,107 @@ class IntentHandler:
     
     def analyze_query(self, query: str) -> Dict[str, Any]:
         """
-        Analyze a natural language query and return intent with parameters.
+        Query analysis - handles company attributes, location filters, and classification.
+        
         Returns dict with:
-        - intent: "filter_list", "company_attribute", or "generic"
-        - params: dict with filter_type, etl_column, value (location), etc.
+        - intent: "company_attribute", "filter_list", or "generic"
+        - params: dict with company_name, attribute, filter_type, value, etc.
         """
         q_lower = query.lower()
         
         # 1. Check for company attribute queries (highest priority)
-        attr_intent = self._check_attribute_query(q_lower)
+        attr_intent = self._check_company_attributes(q_lower)
         if attr_intent:
             return attr_intent
         
         # 2. Check for classification-based filters (government, msme, etc.)
-        # This MUST come before location-only check
         filter_intent = self._check_classification_filters(q_lower)
         if filter_intent:
             return filter_intent
         
-        # 3. Check for industry/location combined queries
+        # 3. Check for industry/location combined queries -> semantic search
         if self._has_industry_and_location(q_lower):
             return {"intent": "generic", "params": {"use_semantic_search": True}}
         
-        # 4. Check for location-only queries (only if no classification filter matched)
+        # 4. Check for location-only queries
         location = self._extract_location(q_lower)
-        if location and not self._has_industry_keywords(q_lower) and not self._has_classification_keywords(q_lower):
-            return {
-                "intent": "filter_list",
-                "params": {
-                    "filter_type": "location",
-                    "value": location,
-                    "etl_column": "State"  # or City
+        if location:
+            # Check if query has meaningful content beyond just location
+            has_content_beyond_location = self._has_content_beyond_location(q_lower, location)
+            
+            if has_content_beyond_location:
+                # Route to semantic search for location + anything else
+                return {"intent": "generic", "params": {"use_semantic_search": True}}
+            else:
+                # Pure location query - use CSV filter
+                return {
+                    "intent": "filter_list",
+                    "params": {
+                        "filter_type": "location",
+                        "value": location,
+                        "etl_column": "State"
+                    }
                 }
-            }
         
-        # 5. Default to generic semantic search
+        # 5. Default to semantic search for everything else
         return {"intent": "generic", "params": {}}
     
-    def _has_classification_keywords(self, query: str) -> bool:
-        """Check if query contains classification keywords (government, msme, etc.)"""
-        classification_keywords = [
-            'government', 'govt', 'psu', 'public sector',
-            'msme', 'micro', 'small', 'medium',
-            'listed', 'private', 'union', 'state', 'central'
-        ]
-        return any(keyword in query for keyword in classification_keywords)
+    def _has_content_beyond_location(self, query: str, location: str) -> bool:
+        """
+        Check if query has meaningful content words beyond just location.
+        This helps distinguish:
+        - "companies in Maharashtra" (location-only) -> CSV filter
+        - "drone companies in Maharashtra" (location + product) -> semantic search
+        """
+        # Remove common stop words and location-related words
+        stop_words = {
+            'in', 'at', 'from', 'of', 'the', 'a', 'an', 'and', 'or', 'for',
+            'companies', 'company', 'list', 'show', 'find', 'get', 'all',
+            'based', 'located', 'present'
+        }
+        
+        # Tokenize and clean
+        words = query.lower().split()
+        content_words = []
+        
+        for word in words:
+            # Remove punctuation
+            word = word.strip('.,?!;:')
+            # Skip if it's a stop word, location, or empty
+            if word and word not in stop_words and word not in location.lower().split():
+                content_words.append(word)
+        
+        # If there are content words beyond location, use semantic search
+        return len(content_words) > 0
     
-    def _check_attribute_query(self, query: str) -> Optional[Dict[str, Any]]:
-        """Check if query is asking for a specific company attribute"""
-        if not self.intents.get("attribute_queries"):
-            return None
+    def _check_company_attributes(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Check if query is asking for specific company attributes.
+        Examples: "PAN of X", "Contact address of Y", "Products made by Z"
+        """
+        # Company attribute patterns (order matters - more specific first)
+        attr_patterns = [
+            (r"(?:contact\s+)?(?:address|location)\s+(?:of|for)\s+(.+)", "address"),
+            (r"(?:contact|phone|email|details?)\s+(?:of|for)\s+(.+)", "contact"),
+            (r"(?:pan|cin|gstin?|registration)\s+(?:of|for)\s+(.+)", "registration"),
+            (r"(?:industry\s+type|industry|domain|sector)\s+(?:of|for)\s+(.+)", "industry"),
+            (r"(?:products?|services?)\s+(?:of|for|made\s+by|manufactured\s+by)\s+(.+)", "products"),
+            (r"(?:turnover|revenue|sales)\s+(?:of|for)\s+(.+)", "turnover"),
+            (r"(?:test\s+facilit(?:y|ies))\s+(?:of|for)\s+(.+)", "test_facilities"),
+            (r"(?:r&d\s+facilit(?:y|ies)|research\s+facilit(?:y|ies))\s+(?:of|for)\s+(.+)", "rd_facilities"),
+        ]
         
-        attr_patterns = self.intents["attribute_queries"]["patterns"]
-        
-        # Try each attribute pattern
-        for pattern_info in attr_patterns:
-            attribute = pattern_info["attribute"]
-            keywords = pattern_info["keywords"]
-            
-            # Check if any keyword matches
-            for keyword in keywords:
-                # Flexible pattern: "{keyword} [optional words] of/for {company_name}"
-                # Handles: "GST of X", "GST Number of X", "PAN Number of X", etc.
-                keyword_escaped = re.escape(keyword)
-                pattern = rf"{keyword_escaped}(?:\s+(?:number|no\.?|code))?\s+(?:of|for)\s+(.+)"
-                m = re.search(pattern, query, re.IGNORECASE)
-                if m:
-                    company_name = m.group(1).strip(" ?.,'\"")
-                    return {
-                        "intent": "company_attribute",
-                        "params": {
-                            "company_name": company_name,
-                            "attribute": attribute,
-                            "etl_columns": pattern_info.get("etl_columns", [])
-                        }
+        for pattern, attr_type in attr_patterns:
+            match = re.search(pattern, query)
+            if match:
+                company_name = match.group(1).strip(" ?,.")
+                return {
+                    "intent": "company_attribute",
+                    "params": {
+                        "company_name": company_name,
+                        "attribute": attr_type
                     }
+                }
         
         return None
     
@@ -214,13 +240,23 @@ class IntentHandler:
         return extracted_location
     
     def _has_industry_keywords(self, query: str) -> bool:
-        """Check if query contains industry keywords"""
+        """Check if query contains industry/product/manufacturing keywords"""
         industry_keywords = [
             'electrical', 'electronics', 'pharma', 'pharmaceutical', 'automotive',
             'textile', 'steel', 'metal', 'chemical', 'food', 'software', 'it',
             'defence', 'defense', 'aerospace', 'plastic', 'machinery', 'construction'
         ]
-        return any(keyword in query for keyword in industry_keywords)
+        
+        # Product/manufacturing keywords
+        product_keywords = [
+            'making', 'manufacturing', 'manufacturer', 'producer', 'producing',
+            'supplier', 'maker', 'fabricator', 'assembler',
+            # Specific products
+            'drone', 'uav', 'uas', 'robot', 'sensor', 'component', 'part',
+            'equipment', 'device', 'system', 'product', 'material'
+        ]
+        
+        return any(keyword in query for keyword in industry_keywords + product_keywords)
     
     def _has_industry_and_location(self, query: str) -> bool:
         """Check if query has both industry and location (use semantic search)"""
@@ -237,22 +273,30 @@ def analyze_intent(query: str, intents_file: str = "intents_reference.json") -> 
 
 
 if __name__ == "__main__":
-    # Test the intent handler
+    # Test the simplified intent handler
     handler = IntentHandler()
     
     test_queries = [
-        "Government companies in Karnataka",
-        "MSME companies in Pune",
-        "Address of HEG LIMITED",
-        "Listed companies in India",
-        "Electrical companies in Pune",
-        "Defence companies",
-        "Private companies in Bangalore"
+        "Government companies in Karnataka",  # Classification filter
+        "MSME companies in Pune",             # Classification filter
+        "Companies in Bhopal",                # Location filter
+        "Listed companies in India",          # Classification filter
+        "Electrical companies in Pune",       # Semantic search (industry + location)
+        "Defence companies",                  # Semantic search
+        "Address of HEG LIMITED",             # Semantic search (no attribute detection)
+        "Contact details of ABC Corp",        # Semantic search (no attribute detection)
+        "Drone manufacturing companies"       # Semantic search
     ]
     
-    print("Testing Intent Handler:\n")
+    print("Testing Simplified Intent Handler:\n")
+    print("Only handles: Location filters and Classification filters")
+    print("Everything else -> Semantic Search\n")
+    print("="*80 + "\n")
+    
     for query in test_queries:
         intent = handler.analyze_query(query)
         print(f"Query: {query}")
-        print(f"Intent: {intent}")
+        print(f"Intent: {intent['intent']}")
+        if intent['params']:
+            print(f"Params: {intent['params']}")
         print()

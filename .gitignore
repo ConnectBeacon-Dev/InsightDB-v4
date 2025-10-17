@@ -7,3 +7,8 @@ models/*
 views/*
 wheelhouse/*
 tools/*
+
+# Production secrets - DO NOT COMMIT
+.env.production
+*.pem
+*.key

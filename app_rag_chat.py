@@ -6,7 +6,9 @@ import json
 import time
 import re
 import random
+import logging
 from pathlib import Path
+from datetime import datetime
 from flask import (
     Flask, request, jsonify, render_template, Response,
     send_from_directory, abort
@@ -17,6 +19,28 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # Import our query engine
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from engine.full_engine_query import EnhancedQueryEngine
+
+# --------------------------------------------------------------------------------------
+# Logging Setup
+# --------------------------------------------------------------------------------------
+# Create logs directory if it doesn't exist
+LOGS_DIR = Path(__file__).resolve().parent / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOGS_DIR / f'app_{datetime.now().strftime("%Y%m%d")}.log'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger('InsightDB')
+logger.info("="*70)
+logger.info("InsightDB Application Starting")
+logger.info("="*70)
 
 # --------------------------------------------------------------------------------------
 # Paths & config (override with env vars if you like)
@@ -59,7 +83,7 @@ def get_query_engine():
         _query_engine = EnhancedQueryEngine(
             views_dir=str(VIEWS_DIR),
             model_name=EMBEDDING_MODEL,
-            llm_model_path=llm_path,
+            llm_model_path=None,
             log_file="query_log.jsonl"
         )
         # Build index on startup
@@ -267,17 +291,27 @@ def ask_stream():
     user_name = (data.get("user_name") or "").strip() or None
 
     if not q:
+        logger.warning("Empty query received")
         return Response("event: error\ndata: query is required\n\n", mimetype="text/event-stream")
+
+    logger.info(f"Query received: '{q}' (k={k}, user={user_name or 'anonymous'})")
 
     # Smalltalk/off-topic quick replies
     st = _smalltalk_or_offtopic(q, user_name)
     if st:
+        logger.info(f"Smalltalk response: {st[:50]}...")
         return Response(_stream_smalltalk(st), mimetype="text/event-stream")
 
     def generate():
+        start_time = time.time()
         try:
             response = _run_query(q, k)
             ans = _format_answer(response)
+            elapsed = time.time() - start_time
+            
+            result_count = len(response.get('results', []))
+            logger.info(f"Query completed: {result_count} results in {elapsed:.2f}s")
+            
             # Stream in small chunks; UI concatenates these (marked.js renders markdown).
             CHUNK = 200
             for i in range(0, len(ans), CHUNK):
@@ -285,6 +319,8 @@ def ask_stream():
                 time.sleep(0.02)  # tiny delay for smoother UI updates
             yield "event: done\ndata: {}\n\n"
         except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"Query failed after {elapsed:.2f}s: {str(e)}", exc_info=True)
             msg = str(e).replace("\n", " ")
             yield f"event: error\ndata: {json.dumps(msg)}\n\n"
 
@@ -310,6 +346,107 @@ def welcome():
     user_name = (data.get('user_name') or '').strip() or None
     msg = _welcome_message(user_name)
     return jsonify({'message': msg})
+
+
+@app.route('/health', methods=['GET'])
+@app.route('/aichat/health', methods=['GET'])
+def health_check():
+    """
+    Health check endpoint showing system status and capabilities.
+    Returns JSON with system health, available features, and warnings.
+    """
+    try:
+        engine = get_query_engine()
+        
+        # Import dependency flags from engine module
+        from engine.full_engine_query import (
+            TRANSFORMERS_AVAILABLE, HAVE_BM25, INTENT_HANDLER_AVAILABLE, np
+        )
+        
+        # Build status response
+        status = {
+            "status": "healthy",
+            "timestamp": time.time(),
+            "capabilities": {
+                "semantic_search": TRANSFORMERS_AVAILABLE,
+                "keyword_search": True,
+                "bm25_scoring": HAVE_BM25,
+                "intent_detection": INTENT_HANDLER_AVAILABLE,
+                "llm_generation": engine.llm is not None,
+                "facility_filtering": True,
+                "multi_category_filtering": True
+            },
+            "dependencies": {
+                "numpy": np is not None,
+                "pandas": True,  # Always available (critical)
+                "sentence_transformers": TRANSFORMERS_AVAILABLE,
+                "rank_bm25": HAVE_BM25
+            },
+            "warnings": [],
+            "search_mode": "semantic" if TRANSFORMERS_AVAILABLE else "keyword_fallback"
+        }
+        
+        # Add warnings for missing optional dependencies
+        if not TRANSFORMERS_AVAILABLE:
+            status["warnings"].append({
+                "level": "warning",
+                "message": "Semantic search unavailable - using keyword fallback",
+                "impact": "Search accuracy may be reduced",
+                "fix": "Install sentence-transformers: pip install sentence-transformers"
+            })
+        
+        if not HAVE_BM25:
+            status["warnings"].append({
+                "level": "info",
+                "message": "BM25 scoring unavailable",
+                "impact": "Keyword search scoring may be less accurate",
+                "fix": "Install rank-bm25: pip install rank-bm25"
+            })
+        
+        if engine.llm is None and not DISABLE_LLM:
+            status["warnings"].append({
+                "level": "info",
+                "message": "LLM generation unavailable",
+                "impact": "Using template-based answers instead of LLM-generated",
+                "fix": "Check LLM model path or set ENABLE_LLM=1"
+            })
+        
+        # Check data availability
+        try:
+            views_exist = VIEWS_DIR.exists()
+            if views_exist:
+                company_file = VIEWS_DIR / "CompanyDetail.csv"
+                test_fac_file = VIEWS_DIR / "TestFacilityDetails.csv"
+                rd_fac_file = VIEWS_DIR / "RDFacilityDetails.csv"
+                
+                status["data_files"] = {
+                    "company_details": company_file.exists(),
+                    "test_facilities": test_fac_file.exists(),
+                    "rd_facilities": rd_fac_file.exists()
+                }
+            else:
+                status["warnings"].append({
+                    "level": "error",
+                    "message": "Views directory not found",
+                    "impact": "System cannot function",
+                    "fix": f"Ensure {VIEWS_DIR} exists with data files"
+                })
+                status["status"] = "unhealthy"
+        except Exception as e:
+            status["warnings"].append({
+                "level": "error",
+                "message": f"Error checking data files: {str(e)}",
+                "impact": "Unknown data availability"
+            })
+        
+        return jsonify(status), 200 if status["status"] == "healthy" else 503
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "timestamp": time.time()
+        }), 500
 
 
 # --------------------------------------------------------------------------------------
