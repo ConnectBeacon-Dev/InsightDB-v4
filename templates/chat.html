@@ -132,8 +132,16 @@
         });
         
         if (response.ok || response.status === 204) {
-          // Redirect to login page (dynamic URL from server)
-          window.location.href = '{{ login_url }}';
+          // Check if we're in an iframe
+          if (window.parent !== window) {
+            // We're in an iframe - notify parent to close the chatbot
+            window.parent.postMessage({ type: 'CHATBOT_LOGOUT' }, '*');
+            // Show a message instead of redirecting
+            document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#6b7280;"><div style="text-align:center;"><h2>Logged Out Successfully</h2><p>You can close this window.</p></div></div>';
+          } else {
+            // Standalone mode - redirect to login page
+            window.location.href = '{{ login_url }}';
+          }
         } else {
           alert('Logout failed. Please try again.');
         }

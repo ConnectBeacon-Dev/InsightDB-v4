@@ -177,7 +177,7 @@
             email: "john@example.com" // User's email
         };
 
-        // Production HTTPS URLs
+        // Production HTTPS URL
         const CHATBOT_BASE_URL = 'https://chat.aichatbot.schemes.ddpdashboard.gov.in';
 
         async function toggleChatbot() {
@@ -215,7 +215,7 @@
                     }
 
                     // Use the token to authenticate the iframe via SSO endpoint
-                    // With HTTPS + SameSite=None, cookies work perfectly in iframes!
+                    // With local HTTP, cookies work perfectly in same-origin iframes!
                     console.log('[DEBUG] Loading chatbot iframe with SSO token...');
                     iframe.src = `${CHATBOT_BASE_URL}/aichat/sso?token=${data.token}`;
                     
@@ -230,7 +230,7 @@
                     
                     if (error.message.includes('Failed to fetch')) {
                         errorMsg += '❌ Cannot connect to server!\n\n';
-                        errorMsg += 'Please ensure the chatbot server is running.';
+                        errorMsg += 'Please ensure the chatbot server is running.'
                     } else {
                         errorMsg += '❌ Error: ' + error.message + '\n\n';
                         errorMsg += 'Check browser console (F12) for details';
@@ -252,6 +252,17 @@
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape' && chatbotOpen) {
                 closeChatbot();
+            }
+        });
+
+        // Listen for logout message from iframe
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'CHATBOT_LOGOUT') {
+                console.log('[INFO] Logout message received from chatbot iframe');
+                closeChatbot();
+                // Clear the iframe src to ensure session is fully cleared
+                document.getElementById('chatbot-iframe').src = '';
+                alert('You have been logged out successfully.');
             }
         });
 
@@ -288,7 +299,9 @@
                 statusDot.className = 'status-indicator red';
                 statusText.textContent = 'Server Not Running';
                 statusMessage.innerHTML = '❌ Cannot connect to server.<br><br>' +
-                    '<strong>Please ensure the chatbot server is running at:</strong><br>' +
+                    '<strong>Please start the chatbot server:</strong><br>' +
+                    '<code>python app.py</code><br><br>' +
+                    'Server should be running at:<br>' +
                     '<code>' + CHATBOT_BASE_URL + '</code>';
             }
         }
