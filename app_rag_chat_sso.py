@@ -196,7 +196,14 @@ DISABLE_LLM = os.getenv("ENABLE_LLM", "0") != "1"
 # --------------------------------------------------------------------------------------
 app = Flask(__name__, template_folder=str(TEMPLATES_DIR), static_folder=str(STATIC_DIR))
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-CORS(app)
+
+# CORS Configuration - Allow all origins for development/embedded usage
+CORS(app, 
+     supports_credentials=True,  # Allow cookies to be sent
+     origins="*",                 # Allow all origins (file://, http://, https://)
+     allow_headers="*",           # Allow all headers
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]  # Allow all methods
+)
 
 # --------------------------------------------------------------------------------------
 # SSO Session Management Functions
@@ -313,12 +320,17 @@ def require_auth(f):
     """Decorator to require authentication for routes."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        sess, _ = get_session(request)
+        sess, sid = get_session(request)
+        
+        # Debug logging
+        cookie_value = request.cookies.get(COOKIE_NAME)
+        logger.info(f"Auth check: path={request.path}, cookie={cookie_value[:20] if cookie_value else 'None'}, session={'found' if sess else 'not found'}")
+        
         if not sess:
             # Session expired or missing - redirect to SSO
             if PORTAL_SSO_URL and request.path.startswith('/aichat/'):
                 ret = urllib.parse.quote(request.path, safe="")
-                logger.info(f"Redirecting to SSO: {request.path}")
+                logger.warning(f"No session found, redirecting to SSO: {request.path}")
                 return redirect(f"{PORTAL_SSO_URL}?return={ret}")
             return jsonify({"error": "Authentication required"}), 401
         
@@ -377,12 +389,25 @@ def sso():
     try:
         claims = verify_jwt(token)
         uid = claims["sub"]
+        user_name = claims.get('name', uid)
         
-        resp = make_response(redirect(ret))
-        set_cookie(resp, create_session(uid, claims))
+        # Create session
+        sid = create_session(uid, claims)
         
-        logger.info(f"SSO login successful: user={uid}, name={claims.get('name')}")
-        return resp
+        logger.info(f"SSO login successful: user={uid}, name={user_name}, session={sid[:20]}...")
+        
+        # If this is for embedded chatbot (no redirect needed), render chat directly
+        if ret == '/aichat/' or ret == '/aichat':
+            # Render the chat page directly with session
+            resp = make_response(render_template('chat.html', user_name=user_name))
+            set_cookie(resp, sid)
+            return resp
+        else:
+            # For other cases, do redirect
+            resp = make_response(redirect(ret))
+            set_cookie(resp, sid)
+            return resp
+            
     except jwt.ExpiredSignatureError:
         logger.error("SSO token expired")
         return jsonify({"error": "Token expired"}), 401
@@ -429,6 +454,101 @@ def backchannel_logout():
         logger.error(f"Backchannel logout failed: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/chatbot-token', methods=['GET'])
+@require_auth
+def chatbot_token():
+    """Generate SSO token for embedded chatbot integration (requires existing session)."""
+    sess = request.session_data
+    uid = sess["uid"]
+    claims = sess["claims"]
+    
+    try:
+        # Generate JWT token for chatbot SSO
+        payload = {
+            'sub': uid,
+            'name': claims.get('name', uid),
+            'email': claims.get('email', ''),
+            'iss': SSO_EXPECT_ISS,
+            'aud': SSO_EXPECT_AUD,
+            'iat': now(),
+            'exp': now() + 3600  # 1 hour expiry
+        }
+        
+        token = jwt.encode(payload, SSO_SECRET, algorithm='HS256')
+        
+        logger.info(f"Generated chatbot token for user={uid}")
+        return jsonify({"token": token})
+    
+    except Exception as e:
+        logger.error(f"Failed to generate chatbot token: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate token"}), 500
+
+@app.route('/api/chatbot-login', methods=['POST'])
+def chatbot_login():
+    """
+    Direct login endpoint for embedded chatbot.
+    Accepts user details and creates a session + returns JWT token.
+    
+    Request body:
+    {
+        "user_id": "user123",
+        "name": "John Doe",
+        "email": "john@example.com"
+    }
+    
+    Response:
+    {
+        "token": "JWT_TOKEN_HERE",
+        "session_created": true
+    }
+    """
+    data = request.get_json(silent=True) or {}
+    
+    user_id = data.get('user_id', '').strip()
+    name = data.get('name', '').strip()
+    email = data.get('email', '').strip()
+    
+    if not user_id:
+        return jsonify({"error": "user_id is required"}), 400
+    
+    if not name:
+        name = user_id  # Default to user_id if name not provided
+    
+    try:
+        # Create claims
+        claims = {
+            'sub': user_id,
+            'name': name,
+            'email': email,
+            'iss': SSO_EXPECT_ISS,
+            'aud': SSO_EXPECT_AUD,
+            'iat': now(),
+            'exp': now() + 3600  # 1 hour expiry
+        }
+        
+        # Generate JWT token
+        token = jwt.encode(claims, SSO_SECRET, algorithm='HS256')
+        
+        # Create session
+        sid = create_session(user_id, claims)
+        
+        # Set session cookie
+        resp = make_response(jsonify({
+            "token": token,
+            "session_created": True,
+            "user_id": user_id,
+            "name": name
+        }))
+        set_cookie(resp, sid)
+        
+        logger.info(f"Direct login successful: user={user_id}, name={name}, session_id={sid[:20]}...")
+        logger.info(f"Cookie settings: name={COOKIE_NAME}, path={COOKIE_PATH}, domain={COOKIE_DOMAIN}, secure={COOKIE_SECURE}, samesite={COOKIE_SAMESITE}")
+        return resp
+    
+    except Exception as e:
+        logger.error(f"Failed to create login session: {e}", exc_info=True)
+        return jsonify({"error": "Failed to create session"}), 500
+
 # --------------------------------------------------------------------------------------
 # Main Chat Routes
 # --------------------------------------------------------------------------------------
@@ -449,6 +569,12 @@ def chat():
 def serve_static(filename):
     """Serve static files."""
     return send_from_directory(STATIC_DIR, filename)
+
+@app.route('/examples/<path:filename>')
+def serve_examples(filename):
+    """Serve example files."""
+    examples_dir = APP_DIR / "examples"
+    return send_from_directory(examples_dir, filename)
 
 # --------------------------------------------------------------------------------------
 # Query Routes

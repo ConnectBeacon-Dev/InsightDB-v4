@@ -159,8 +159,13 @@ app.wsgi_app = ProxyFix(
     x_prefix=int(os.getenv("PROXY_X_PREFIX", "1"))
 )
 
-# Enable CORS for all routes (allows access from file:// and other origins)
-CORS(app)
+# CORS Configuration - Allow all origins for development/embedded usage
+CORS(app, 
+     supports_credentials=True,  # Allow cookies to be sent
+     origins="*",                 # Allow all origins (file://, http://, https://)
+     allow_headers="*",           # Allow all headers
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]  # Allow all methods
+)
 
 # --------------------------------------------------------------------------------------
 # Helpers

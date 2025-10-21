@@ -1,346 +1,179 @@
-# DPIT Chatbot Integration Examples
+# Examples Directory
 
-This directory contains ready-to-use examples for integrating the DPIT Chatbot into your applications.
+This directory contains the production-ready embedded chatbot example with automatic SSO login.
 
-## 📁 Directory Structure
+## File
 
-```
-examples/
-├── README.md                          # This file
-├── web-component/                     # Web Component implementation
-│   ├── chatbot-widget.js             # Reusable Web Component
-│   └── demo.html                     # Live demo page
-├── iframe-embed/                      # Iframe integration examples
-│   └── embed-example.html            # Multiple embed patterns
-└── api-clients/                       # API client libraries
-    ├── chatbot_client.py             # Python client
-    └── chatbot_client.js             # JavaScript/Node.js client
-```
+- **`chatbot_embedded_production.html`** - Production embedded chatbot with auto-login
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### 1. Deploy the Server
 
-1. **Start the chatbot server:**
-   ```bash
-   python app_rag_chat.py
-   ```
-   The server should be running at `http://127.0.0.1:8000`
-
-2. **Choose your integration method below**
-
----
-
-## 1️⃣ Web Component (Recommended)
-
-**Best for:** Modern web applications, custom styling, full control
-
-### Files:
-- `web-component/chatbot-widget.js` - The Web Component
-- `web-component/demo.html` - Live demo
-
-### Usage:
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>My Website</title>
-  <script src="chatbot-widget.js"></script>
-</head>
-<body>
-  <h1>Welcome</h1>
-  
-  <chatbot-widget 
-    api-url="http://127.0.0.1:8000"
-    theme="#6915CF"
-    height="600px"
-  ></chatbot-widget>
-</body>
-</html>
-```
-
-### Features:
-✅ Direct API integration with streaming  
-✅ Customizable theme colors  
-✅ Adjustable height  
-✅ Auto-resize textarea  
-✅ Error handling  
-✅ No framework dependencies  
-
-### To Test:
 ```bash
-# Open the demo in your browser
-cd examples/web-component
-# Then open demo.html in your browser
+python deploy.py
 ```
+
+This starts both login and chatbot servers with HTTPS support.
+
+### 2. Access the Example
+
+Open in your browser:
+```
+https://chat.aichatbot.schemes.ddpdashboard.gov.in/examples/chatbot_embedded_production.html
+```
+
+### 3. Test the Chatbot
+
+- Click the 💬 button in the bottom-right corner
+- Chatbot opens automatically without login prompt
+- Start chatting!
 
 ---
 
-## 2️⃣ Iframe Embed
+## 🔧 How It Works
 
-**Best for:** Quick integration, existing websites, minimal setup
+### Auto-Login Flow
 
-### Files:
-- `iframe-embed/embed-example.html` - Multiple embed patterns
-
-### Usage:
-
-```html
-<!-- Simple embed -->
-<iframe 
-  src="http://127.0.0.1:8000/chat"
-  width="100%"
-  height="600px"
-  style="border: 1px solid #e5e7eb; border-radius: 8px;"
-  allow="microphone"
-></iframe>
+```
+1. User clicks 💬 button on your webpage
+   ↓
+2. JavaScript calls /api/chatbot-login with user details
+   {user_id, name, email}
+   ↓
+3. Server creates session + returns JWT token
+   ↓
+4. Iframe loads /aichat/sso?token=JWT
+   ↓
+5. SSO validates token, creates session in iframe
+   ↓
+6. Chatbot opens - user is logged in! ✓
 ```
 
-### Patterns Included:
-- Standard embed
-- Responsive container
-- Sidebar layout
-- Modal/popup
-- Full-width embed
+### Key Features
 
-### To Test:
-```bash
-# Open the examples in your browser
-cd examples/iframe-embed
-# Then open embed-example.html in your browser
-```
+✅ **No separate login page** - User details passed directly  
+✅ **HTTPS + SameSite=None** - Cookies work in iframes  
+✅ **Floating chat button** - Modern UI  
+✅ **Responsive design** - Works on mobile  
+✅ **Auto token generation** - Seamless authentication  
 
 ---
 
-## 3️⃣ Python API Client
+## 📝 Integration into Your Website
 
-**Best for:** Backend integration, Python applications, automation
+### Step 1: Update User Details
 
-### Files:
-- `api-clients/chatbot_client.py` - Python client library
-
-### Usage:
-
-```python
-from chatbot_client import ChatbotClient
-
-# Create client
-client = ChatbotClient()
-
-# Non-streaming request
-result = client.ask("List companies in Pune")
-print(result['answer'])
-
-# Streaming request
-for token in client.ask_stream("Companies with ISO 9001"):
-    print(token, end="", flush=True)
-```
-
-### Features:
-✅ Both streaming and non-streaming modes  
-✅ Context manager support  
-✅ Health check method  
-✅ Full error handling  
-✅ Type hints  
-
-### To Test:
-```bash
-cd examples/api-clients
-python chatbot_client.py
-```
-
----
-
-## 4️⃣ JavaScript API Client
-
-**Best for:** Node.js applications, frontend apps without UI, custom integrations
-
-### Files:
-- `api-clients/chatbot_client.js` - JavaScript/Node.js client
-
-### Usage (Browser):
-
-```html
-<script src="chatbot_client.js"></script>
-<script>
-  const client = new ChatbotClient();
-  
-  async function askQuestion() {
-    const result = await client.ask("List companies in Bhopal");
-    console.log(result.answer);
-  }
-  
-  askQuestion();
-</script>
-```
-
-### Usage (Node.js):
+Edit `chatbot_embedded_production.html` (lines 166-170):
 
 ```javascript
-const ChatbotClient = require('./chatbot_client.js');
+const USER_DETAILS = {
+    user_id: "john.doe",      // Replace with actual user ID from your session
+    name: "John Doe",         // Replace with actual user name
+    email: "john@example.com" // Replace with actual user email
+};
+```
 
-const client = new ChatbotClient();
+### Step 2: Copy the Code
 
-// Non-streaming
-const result = await client.ask('List companies in Pune');
-console.log(result.answer);
+The example contains everything you need:
+- Chat button styling
+- Iframe container
+- JavaScript for auto-login
+- Error handling
 
-// Streaming
-for await (const token of client.askStream('Companies with ISO 9001')) {
-  process.stdout.write(token);
+### Step 3: Customize (Optional)
+
+- Change button position/style
+- Adjust iframe size
+- Modify colors/theme
+- Add custom error messages
+
+---
+
+## 🔑 API Endpoint
+
+### `/api/chatbot-login` (POST)
+
+Creates a session and returns JWT token for SSO.
+
+**Request:**
+```json
+{
+  "user_id": "john.doe",
+  "name": "John Doe",
+  "email": "john@example.com"
 }
 ```
 
-### To Test:
-```bash
-cd examples/api-clients
-node chatbot_client.js
+**Response:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "session_created": true,
+  "user_id": "john.doe",
+  "name": "John Doe"
+}
+```
+
+**Usage in your app:**
+```javascript
+const response = await fetch('https://chat.aichatbot.schemes.ddpdashboard.gov.in/api/chatbot-login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    credentials: 'include',
+    body: JSON.stringify(userDetails)
+});
+const data = await response.json();
+iframe.src = `https://chat.aichatbot.schemes.ddpdashboard.gov.in/aichat/sso?token=${data.token}`;
 ```
 
 ---
 
-## 📊 Comparison Table
+## 🔒 Security Notes
 
-| Feature | Web Component | Iframe | Python Client | JS Client |
-|---------|--------------|--------|---------------|-----------|
-| **Ease of Setup** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **Customization** | ⭐⭐⭐⭐⭐ | ⭐⭐ | N/A | N/A |
-| **UI Included** | ✅ Yes | ✅ Yes | ❌ No | ❌ No |
-| **Streaming** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-| **Voice Input** | ❌ No | ✅ Yes | ❌ No | ❌ No |
-| **Best For** | Modern apps | Quick embed | Backend | Node.js/Browser |
+### Important: Get User Details from YOUR Session
+
+**✅ Good:**
+```javascript
+// Your backend endpoint that validates YOUR session
+fetch('/get-current-user')
+  .then(r => r.json())
+  .then(user => {
+    // user details from YOUR authenticated session
+    return fetch('/api/chatbot-login', {
+      method: 'POST',
+      body: JSON.stringify(user)
+    });
+  });
+```
+
+**❌ Bad:**
+```javascript
+// Hardcoded - anyone can change this!
+const user = {user_id: "admin"}; // Don't do this!
+```
+
+### Production Checklist
+
+- [ ] User details come from authenticated session
+- [ ] HTTPS enabled (`secure: true`)
+- [ ] `SameSite=None` in config.yaml
+- [ ] `.env.production` has strong secret
+- [ ] Test iframe embedding works
+- [ ] Test on mobile devices
 
 ---
 
-## 🎨 Customization Options
+## 📚 Additional Documentation
 
-### Web Component Attributes:
-
-| Attribute | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `api-url` | string | `http://127.0.0.1:8000` | API endpoint URL |
-| `theme` | string | `#6915CF` | Primary color (header) |
-| `height` | string | `600px` | Widget height |
-
-### Example with all options:
-```html
-<chatbot-widget 
-  api-url="https://your-domain.com/api"
-  theme="#3b82f6"
-  height="500px"
-></chatbot-widget>
-```
+- **Deployment:** See `../README_DEPLOYMENT.md`
+- **Complete Overview:** See `../FINAL_SUMMARY.md`
 
 ---
 
-## 🔧 Advanced Configuration
+## 🎉 That's It!
 
-### CORS Setup (for production)
+You now have a production-ready embedded chatbot with automatic SSO login. Just update the user details and integrate into your website!
 
-If deploying to a different domain, add CORS to your Flask app:
-
-```python
-from flask_cors import CORS
-
-app = Flask(__name__)
-CORS(app, resources={
-    r"/ask*": {
-        "origins": ["https://yourdomain.com"],
-        "methods": ["POST"],
-        "allow_headers": ["Content-Type"]
-    }
-})
-```
-
-### Production Deployment
-
-1. **Use HTTPS** - Required for voice features
-2. **Configure allowed origins** - Set proper CORS
-3. **Add rate limiting** - Prevent abuse
-4. **Monitor API usage** - Track requests
-5. **Use production WSGI server** - E.g., Waitress, Gunicorn
-
----
-
-## 🐛 Troubleshooting
-
-### Common Issues:
-
-**Problem:** Cannot connect to API
-```
-Solution: Make sure the server is running at http://127.0.0.1:8000
-Run: python app_rag_chat.py
-```
-
-**Problem:** CORS errors
-```
-Solution: Add CORS headers or use proxy
-See Advanced Configuration section above
-```
-
-**Problem:** Voice input not working (iframe)
-```
-Solution: Use HTTPS in production
-Voice API requires secure context (except localhost)
-```
-
-**Problem:** Streaming not working
-```
-Solution: Ensure no proxy/buffer is interfering
-Check that SSE events are not being buffered
-```
-
-**Problem:** Slow responses
-```
-Solution: 
-- Check model loading time
-- Adjust k parameter (try lower values)
-- Verify semantic search index is built
-```
-
----
-
-## 📚 Additional Resources
-
-- **Main Documentation:** `../CHATBOT_USER_CONTROL_GUIDE.md`
-- **API Reference:** See guide for endpoint details
-- **Source Code:** `../app_rag_chat.py`
-- **Chat Interface:** `../templates/index.html`
-
----
-
-## 🤝 Support
-
-For questions or issues:
-1. Check the troubleshooting section above
-2. Review the main documentation guide
-3. Examine the example code for patterns
-4. Test with the included demo files
-
----
-
-## 📝 Example Queries to Try
-
-Once you have the chatbot running, try these queries:
-
-```
-1. "List companies in Pune"
-2. "Companies with ISO 9001 certification"
-3. "Show me companies in Maharashtra"
-4. "Address of [Company Name]"
-5. "How many companies are in Bengaluru?"
-6. "Companies with NABL certification"
-7. "List products by [Company Name]"
-```
-
----
-
-## 🎯 Next Steps
-
-1. **Start Simple:** Begin with the iframe embed for quick testing
-2. **Go Custom:** Move to Web Component for full customization
-3. **Backend Integration:** Use Python/JS clients for server-side needs
-4. **Production Ready:** Add CORS, HTTPS, rate limiting, monitoring
-
-Happy integrating! 🚀
+**Questions?** Check the documentation files in the root directory.

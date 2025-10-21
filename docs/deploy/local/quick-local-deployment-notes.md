@@ -1,12 +1,23 @@
 ## This document covers local depolyment
 
 
+### Make sure all the servers are stopped
+
+- python.exe .\stop_servers.py
+- del .\.env.production
+
+
+PS D:\CBDPIT\RELEASE\OCT17\InsightDB-v4> python.exe .\stop_servers.py
+PS D:\CBDPIT\RELEASE\OCT17\InsightDB-v4> del .\.env.production
+PS D:\CBDPIT\RELEASE\OCT17\InsightDB-v4>
+
+
 ### Certificates for local deployment
 ---
 
 #### Used pre-created certs 
 ---
-- For local testing the certs are already stored in: InsightDB-v4\test\certs
+- For local testing the certs are already stored in: InsightDB-v4/docs/deploy/local/certs
 
 
 
@@ -28,21 +39,15 @@ mkcert -install
 ```
 
 ```
-mkcert connectbeacon.com login.connectbeacon.com chat.connectbeacon.com localhost 127.0.0.1 ::1
+mkcert mkcert schemes.ddpdashboard.gov.in login.aichatbot.schemes.ddpdashboard.gov.in chat.aichatbot.schemes.ddpdashboard.gov.in localhost 127.0.0.1 ::1
 ``` 
 
 
 
 ### Update local host for dns resolution
 ---
+- on windows powershell run the script : ``` .\update_host.ps1 ```
 
-- Add entries into hosts file of Windows (not required for production deployment). To be run only once
-
-```
-Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "`n127.0.0.1 login.connectbeacon.com
-Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "`n127.0.0.1 chat.connectbeacon.com
-Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "`n127.0.0.1 connectbeacon.com
-```
 
 
 
