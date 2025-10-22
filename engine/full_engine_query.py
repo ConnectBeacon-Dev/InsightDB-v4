@@ -127,6 +127,7 @@ def check_dependencies(verbose: bool = True) -> dict:
 # ============================================================================
 
 # Common Indian locations (canonical names) for extraction
+# This will be augmented with locations extracted from CompanyDetail.csv
 INDIAN_LOCATIONS = {
     'maharashtra', 'gujarat', 'delhi', 'mumbai', 'bangalore', 'bengaluru',
     'chennai', 'hyderabad', 'kolkata', 'pune', 'ahmedabad', 'kerala',
@@ -134,6 +135,35 @@ INDIAN_LOCATIONS = {
     'uttar pradesh', 'madhya pradesh', 'andhra pradesh', 'west bengal',
     'odisha', 'uttarakhand'
 }
+
+def _extract_location_components_from_address(address: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Extract City, State, and PinCode-Country from address string.
+    Address format: ..., City, State, PinCode-Country
+    
+    Example: "PETROLEUM HOUSE17 JAMSHEDJI TATA ROAD CHURCHGATE,MUMBAI,Maharashtra,400020-India"
+    Returns: ('mumbai', 'maharashtra', '400020-india')
+    """
+    if not address or pd.isna(address):
+        return None, None, None
+    
+    # Split by comma and get last 3 components
+    parts = [p.strip() for p in str(address).split(',')]
+    
+    if len(parts) >= 3:
+        # Last 3 parts: City, State, PinCode-Country
+        city = parts[-3].lower().strip()
+        state = parts[-2].lower().strip()
+        pin_country = parts[-1].lower().strip()
+        
+        # Clean up empty values
+        city = city if city and city not in ['', 'nan', 'none', 'null'] else None
+        state = state if state and state not in ['', 'nan', 'none', 'null'] else None
+        pin_country = pin_country if pin_country and pin_country not in ['', 'nan', 'none', 'null'] else None
+        
+        return city, state, pin_country
+    
+    return None, None, None
 
 # Aliases and common misspellings mapped to canonical names
 COMMON_LOCATION_ALIASES = {
@@ -152,8 +182,17 @@ COMMON_LOCATION_ALIASES = {
     'mp': 'madhya pradesh',
 }
 
-def _extract_location(text: str) -> Optional[str]:
-    """Extract location from text if present (robust to misspellings and multi-word locations)."""
+def _extract_location(text: str, location_set: Optional[set] = None) -> Optional[str]:
+    """
+    Extract location from text if present (robust to misspellings and multi-word locations).
+    
+    Args:
+        text: Text to extract location from
+        location_set: Optional set of locations to search in. If None, uses INDIAN_LOCATIONS.
+    """
+    if location_set is None:
+        location_set = INDIAN_LOCATIONS
+    
     s = text.lower().strip()
     s = re.sub(r"[^\w\s\-&/]", " ", s)
     s = re.sub(r"\s+", " ", s)
@@ -164,7 +203,7 @@ def _extract_location(text: str) -> Optional[str]:
             return canonical
 
     # 2) Direct canonical hits, prefer longer names first (e.g., 'tamil nadu' before 'tamil')
-    for loc in sorted(INDIAN_LOCATIONS, key=len, reverse=True):
+    for loc in sorted(location_set, key=len, reverse=True):
         if re.search(rf"\b{re.escape(loc)}\b", s):
             return loc
 
@@ -178,7 +217,7 @@ def _extract_location(text: str) -> Optional[str]:
             if alias_match:
                 return COMMON_LOCATION_ALIASES[alias_match[0]]
             # Then canonical names (single tokens only)
-            canon_match = difflib.get_close_matches(tok, {w for w in INDIAN_LOCATIONS if ' ' not in w}, n=1, cutoff=0.88)
+            canon_match = difflib.get_close_matches(tok, {w for w in location_set if ' ' not in w}, n=1, cutoff=0.88)
             if canon_match:
                 return canon_match[0]
     except Exception:
@@ -205,6 +244,132 @@ def _minmax_normalize(scores: Dict[str, float]) -> Dict[str, float]:
         return {k: 0.0 for k in scores}
     return {k: (v - vmin) / (vmax - vmin) for k, v in scores.items()}
 
+def _extract_industry_keywords(query: str) -> set:
+    """
+    Extract industry-related keywords from query for classification matching.
+    Matches against CompanyIndustrialClassification field format.
+    
+    Returns a set of normalized keywords that might match CompanyIndustrialClassification.
+    """
+    # Industry keywords mapped to CompanyIndustrialClassification patterns
+    # Based on actual data format: "Agriculture and Allied Activities", etc.
+    industry_indicators = {
+        # Agriculture & Allied
+        'agriculture', 'agricultural', 'agro', 'farming', 'allied activities',
+        'crop', 'livestock', 'dairy', 'poultry', 'fishery', 'horticulture',
+        
+        # Defence & Aerospace
+        'defence', 'defense', 'military', 'aerospace', 'aviation', 'aircraft', 'missile',
+        'radar', 'naval', 'army', 'air force', 'weapon', 'ammunition', 'ordnance',
+        
+        # Manufacturing (General)
+        'manufacturing', 'fabrication', 'production', 'assembly', 'machining',
+        'industrial', 'factory', 'plant',
+        
+        # Marine & Shipbuilding
+        'marine', 'ship', 'shipbuilding', 'vessel', 'offshore', 'maritime', 'naval',
+        'port', 'dock', 'shipping',
+        
+        # Electronics & IT
+        'electronics', 'electronic', 'semiconductor', 'software', 'it', 'information technology',
+        'computer', 'digital', 'automation', 'telecom', 'telecommunication',
+        
+        # Automotive
+        'automotive', 'automobile', 'vehicle', 'car', 'truck', 'auto', 'motor',
+        'two wheeler', 'four wheeler',
+        
+        # Chemicals & Pharma
+        'chemical', 'pharmaceutical', 'pharma', 'drug', 'medicine', 'healthcare',
+        'biotech', 'biotechnology',
+        
+        # Energy & Power
+        'energy', 'power', 'electrical', 'renewable', 'solar', 'wind', 'nuclear',
+        'electricity', 'thermal', 'hydro',
+        
+        # Construction & Infrastructure
+        'construction', 'infrastructure', 'building', 'civil', 'engineering',
+        'real estate', 'housing', 'cement', 'concrete',
+        
+        # Textiles
+        'textile', 'fabric', 'garment', 'apparel', 'clothing', 'cotton', 'yarn',
+        'spinning', 'weaving',
+        
+        # Food & Beverages
+        'food', 'beverage', 'fmcg', 'consumer goods', 'packaged food',
+        'bakery', 'confectionery', 'dairy products',
+        
+        # Metal & Mining
+        'metal', 'steel', 'iron', 'mining', 'metallurgy', 'aluminium', 'copper',
+        'ore', 'mineral',
+        
+        # Oil & Gas
+        'oil', 'gas', 'petroleum', 'refinery', 'petrochemical', 'exploration',
+        
+        # Services
+        'service', 'services', 'consulting', 'finance', 'banking', 'insurance',
+        'logistics', 'transport', 'trading', 'retail',
+        
+        # Others
+        'plastic', 'rubber', 'paper', 'pulp', 'glass', 'ceramic',
+        'leather', 'wood', 'furniture', 'printing', 'packaging'
+    }
+    
+    query_lower = query.lower()
+    found_keywords = set()
+    
+    # Direct keyword matching
+    for keyword in industry_indicators:
+        if keyword in query_lower:
+            found_keywords.add(keyword)
+    
+    return found_keywords
+
+def _build_location_set_from_csv(csv_path: Path) -> set:
+    """
+    Build a set of unique locations (cities and states) from CompanyDetail.csv.
+    Extracts from City, State columns and parses Address field.
+    """
+    locations = set(INDIAN_LOCATIONS)  # Start with base set
+    
+    try:
+        if not csv_path.exists():
+            return locations
+        
+        # Read only the columns we need
+        df = pd.read_csv(csv_path, dtype=str, usecols=lambda col: col in ['City', 'State', 'Address'])
+        
+        # Extract from City column
+        if 'City' in df.columns:
+            cities = df['City'].dropna().unique()
+            for city in cities:
+                city_clean = str(city).strip().lower()
+                if city_clean and city_clean not in ['', 'nan', 'none', 'null']:
+                    locations.add(city_clean)
+        
+        # Extract from State column
+        if 'State' in df.columns:
+            states = df['State'].dropna().unique()
+            for state in states:
+                state_clean = str(state).strip().lower()
+                if state_clean and state_clean not in ['', 'nan', 'none', 'null']:
+                    locations.add(state_clean)
+        
+        # Extract from Address column (last 3 comma-separated components)
+        if 'Address' in df.columns:
+            for address in df['Address'].dropna():
+                city, state, _ = _extract_location_components_from_address(address)
+                if city:
+                    locations.add(city)
+                if state:
+                    locations.add(state)
+        
+        print(f"[INFO] Built location set with {len(locations)} unique locations from data")
+        
+    except Exception as e:
+        print(f"[WARNING] Could not extract locations from CSV: {e}")
+    
+    return locations
+
 
 # ============================================================================
 # CORE ENGINE CLASS
@@ -219,7 +384,12 @@ class EnhancedQueryEngine:
         llm_model_path: Optional[str] = None,
         log_file: str = "query_log.jsonl",
         intents_file: str = "intents_reference.json",
-        check_deps: bool = True
+        check_deps: bool = True,
+        # Hybrid scoring weights
+        semantic_weight: float = 0.65,
+        keyword_weight: float = 0.20,
+        location_weight: float = 0.05,
+        industry_weight: float = 0.10
     ):
         # Check dependencies on first initialization
         if check_deps:
@@ -238,6 +408,28 @@ class EnhancedQueryEngine:
         # Initialize BM25 cache
         self._bm25 = None
         self._bm25_company_ids = None
+        
+        # Build dynamic location set from CompanyDetail.csv
+        # This augments the hardcoded INDIAN_LOCATIONS with actual data
+        company_csv = self.views_dir / "CompanyDetail.csv"
+        self.locations = _build_location_set_from_csv(company_csv)
+        
+        # Store hybrid scoring weights
+        # Formula: Final_Score = (γ × S_Sem) + (β × S_BM25) + (λ × S_Loc) + (δ × S_Ind)
+        # Where:
+        #   γ (gamma) = semantic_weight
+        #   β (beta) = keyword_weight
+        #   λ (lambda) = location_weight
+        #   δ (delta) = industry_weight
+        self.semantic_weight = semantic_weight
+        self.keyword_weight = keyword_weight
+        self.location_weight = location_weight
+        self.industry_weight = industry_weight
+        
+        # Validate weights sum to 1.0 (or close to it)
+        total_weight = semantic_weight + keyword_weight + location_weight + industry_weight
+        if abs(total_weight - 1.0) > 0.01:
+            print(f"[WARNING] Hybrid scoring weights sum to {total_weight:.3f}, not 1.0. Results may be skewed.")
         
         # Load intent patterns
         self.intents = self._load_intents(intents_file)
@@ -314,8 +506,47 @@ class EnhancedQueryEngine:
 
     def semantic_search_companies(self, query: str, top_k: int = 20) -> pd.DataFrame:
         """
-        Search with location as a filter (Option 4: Filter-based approach).
-        Location in query is treated as a hard filter, not a scoring factor.
+        Hybrid search combining semantic understanding, keyword matching, location preference,
+        and industry classification filtering.
+        
+        **Hybrid Scoring Formula:**
+        ```
+        Final_Score = (γ × S_Sem) + (β × S_BM25) + (λ × S_Loc) + (δ × S_Ind)
+        ```
+        
+        Where:
+        - **S_Sem**: Normalized semantic similarity from SentenceTransformer (conceptual relevance)
+          - Finds "Ship building" ≈ "Marine vessel fabrication"
+        - **S_BM25**: Normalized BM25 keyword score (exact term matching)
+          - Finds exact keyword matches
+        - **S_Loc**: Location match score (0 or 1)
+          - Soft constraint for geographic filtering
+        - **S_Ind**: Industry classification match score (0 to 1)
+          - Secondary hard filter based on CompanyIndustrialClassification
+          - Supports partial matches (e.g., 1 of 2 keywords = 0.5)
+        - **γ (gamma)**: Semantic weight (default: 0.65)
+        - **β (beta)**: Keyword weight (default: 0.20)
+        - **λ (lambda)**: Location weight (default: 0.05)
+        - **δ (delta)**: Industry weight (default: 0.10)
+        
+        **Normalization:**
+        S_Sem and S_BM25 are Min-Max normalized to [0, 1] range for fair comparison.
+        
+        **Soft Constraints:**
+        - **Location**: Companies matching the location get a boost, but non-matching are still returned
+        - **Industry**: Companies matching industry keywords get a boost based on match quality
+        
+        **Industry Keywords Detected:**
+        Defence, aerospace, manufacturing, marine, electronics, automotive, chemicals, energy,
+        construction, textiles, food, agriculture, metal, mining, oil, gas, and more.
+        
+        Args:
+            query: Natural language query
+            top_k: Number of results to return
+            
+        Returns:
+            DataFrame with columns: CompanyName, similarity_score (final), semantic_score,
+            keyword_score, location_score, industry_score, and other company details
         """
         if not TRANSFORMERS_AVAILABLE or np is None:
             print("  Semantic search unavailable; fallback to keyword.")
@@ -342,13 +573,17 @@ class EnhancedQueryEngine:
             query_location = None
             query_content = query
         else:
-            # Extract location for filtering
-            query_location = _extract_location(query)
+            # Extract location for filtering using dynamic location set
+            query_location = _extract_location(query, self.locations)
             query_content = _remove_location(query, query_location)
+        
+        # Extract industry keywords from query for classification matching
+        industry_keywords = _extract_industry_keywords(query)
         
         print(f"\n[DEBUG] semantic_search_companies called")
         print(f"[DEBUG] Company-specific query: {is_company_specific_query}")
         print(f"[DEBUG] Extracted location: {query_location}")
+        print(f"[DEBUG] Extracted industry keywords: {industry_keywords if industry_keywords else 'None'}")
         print(f"[DEBUG] Content query: '{query_content}'")
         
         # Check if query mentions R&D/Test facilities - if so, we'll need to search more candidates
@@ -384,52 +619,91 @@ class EnhancedQueryEngine:
             print(f"  R&D/Test facility query detected - expanding search to top {expanded_top_k} candidates")
             print(f"  has_rd_keyword={has_rd_keyword}, has_test_keyword={has_test_keyword}")
         
-        # Load company details for location filtering
+        # Load company details for location matching
         comp = self._load_company_detail()
         comp["Id"] = comp["Id"].astype(str)
         
-        # OPTION 4: Apply location filter FIRST if location specified
+        # --- SOFT CONSTRAINT: No hard filtering, work with ENTIRE dataset ---
+        # We'll compute a location match score and boost results later
+        doc_index_filtered = doc_index
+        E_filtered = E
+        
+        # Calculate location match scores for all companies if location is specified
+        location_match_scores = {}
         if query_location:
-            # Filter companies by location
-            location_mask = pd.Series(False, index=comp.index)
-            print(f"[DEBUG] Total companies before filter: {len(comp)}")
+            print(f"  Location detected: {query_location} (applying as SOFT CONSTRAINT - score boost)")
+            print(f"[DEBUG] Total companies in dataset: {len(comp)}")
             
-            for col in ["City", "State", "Address"]:
-                if col in comp.columns:
-                    # Direct string matching first (more reliable than extraction)
-                    direct_match = comp[col].str.lower().str.contains(query_location, case=False, na=False, regex=False)
-                    matches_this_col = direct_match.sum()
-                    print(f"[DEBUG] {col} direct matches: {matches_this_col}")
-                    location_mask |= direct_match
-                    
-                    # Also try extraction-based matching for normalized comparison
-                    comp_locations = comp[col].apply(lambda x: _extract_location(str(x)) if pd.notna(x) else None)
-                    extraction_matches = (comp_locations == query_location)
-                    matches_extraction = extraction_matches.sum()
-                    print(f"[DEBUG] {col} extraction matches: {matches_extraction}")
-                    location_mask |= extraction_matches
+            # For each company, determine if it matches the location
+            for idx, row in comp.iterrows():
+                company_id = str(row["Id"])
+                is_match = False
+                
+                for col in ["City", "State", "Address"]:
+                    if col in comp.columns and pd.notna(row[col]):
+                        col_value = str(row[col]).lower()
+                        # Direct string matching
+                        if query_location in col_value:
+                            is_match = True
+                            break
+                        # Also try extraction-based matching
+                        extracted_loc = _extract_location(col_value)
+                        if extracted_loc == query_location:
+                            is_match = True
+                            break
+                
+                # Store as 1.0 for match, 0.0 for no match
+                location_match_scores[company_id] = 1.0 if is_match else 0.0
             
-            filtered_comp = comp[location_mask]
-            
-            if filtered_comp.empty:
-                print(f"  No companies found in location: {query_location}")
-                return pd.DataFrame()
-            
-            print(f"  Filtered to {len(filtered_comp)} companies in {query_location}")
-            
-            # Filter doc_index and embeddings to only include companies in the location
-            filtered_company_ids = set(filtered_comp["Id"].astype(str))
-            doc_mask = doc_index["CompanyId"].astype(str).isin(filtered_company_ids)
-            doc_index_filtered = doc_index[doc_mask].copy()
-            E_filtered = E[doc_mask.values] if E is not None else None
-            
-            if doc_index_filtered.empty or E_filtered is None or E_filtered.shape[0] == 0:
-                print(f"  No indexed companies in location: {query_location}")
-                return pd.DataFrame()
+            matches_count = sum(1 for v in location_match_scores.values() if v > 0)
+            print(f"[DEBUG] Companies matching location '{query_location}': {matches_count}")
         else:
-            # No location filter - use full dataset
-            doc_index_filtered = doc_index
-            E_filtered = E
+            print(f"  No location detected in query, searching all locations")
+            # No location filter - all companies get 0.0 location score (no boost)
+            for idx, row in comp.iterrows():
+                location_match_scores[str(row["Id"])] = 0.0
+        
+        # ---- INDUSTRY CLASSIFICATION SCORING ----
+        # Calculate industry match scores based on CompanyIndustrialClassification
+        industry_match_scores = {}
+        if industry_keywords:
+            print(f"  Industry keywords detected: {industry_keywords} (applying as SECONDARY HARD FILTER - score boost)")
+            print(f"[DEBUG] Checking CompanyIndustrialClassification for matches")
+            
+            # For each company, check if industrial classification matches query keywords
+            for idx, row in comp.iterrows():
+                company_id = str(row["Id"])
+                match_score = 0.0
+                
+                # Check CompanyIndustrialClassification field
+                if "CompanyIndustrialClassification" in comp.columns and pd.notna(row["CompanyIndustrialClassification"]):
+                    classification = str(row["CompanyIndustrialClassification"]).lower()
+                    
+                    # Count how many industry keywords match
+                    matches = sum(1 for keyword in industry_keywords if keyword in classification)
+                    if matches > 0:
+                        # Normalize by number of keywords (partial match support)
+                        match_score = min(matches / len(industry_keywords), 1.0)
+                
+                # Also check IndustryDomain and IndustrySubdomain as fallback
+                if match_score == 0.0:
+                    for col in ["IndustryDomain", "IndustrySubdomain"]:
+                        if col in comp.columns and pd.notna(row[col]):
+                            industry_field = str(row[col]).lower()
+                            matches = sum(1 for keyword in industry_keywords if keyword in industry_field)
+                            if matches > 0:
+                                match_score = min(matches / len(industry_keywords), 1.0) * 0.8  # Slightly lower weight for fallback
+                                break
+                
+                industry_match_scores[company_id] = match_score
+            
+            matches_count = sum(1 for v in industry_match_scores.values() if v > 0)
+            print(f"[DEBUG] Companies matching industry classification: {matches_count}")
+        else:
+            print(f"  No industry keywords detected in query")
+            # No industry keywords - all companies get 0.0 industry score (no boost)
+            for idx, row in comp.iterrows():
+                industry_match_scores[str(row["Id"])] = 0.0
 
         # ---- SEMANTIC SCORING (on filtered dataset) ----
         self._ensure_embedder()
@@ -441,25 +715,60 @@ class EnhancedQueryEngine:
         # Rebuild BM25 on filtered corpus to ensure accurate scoring
         keyword_scores = self._get_keyword_scores_filtered(query_content, doc_index_filtered)
 
-        # Combine scores using RAW values (not normalized) to preserve absolute relevance
+        # ---- HYBRID SCORING: Combine Semantic + BM25 + Location ----
+        # Build score dictionaries
         semantic_dict = {doc_index_filtered.iloc[i]["CompanyId"]: float(semantic_sims[i]) for i in range(len(doc_index_filtered))}
         
-        # Keep raw scores for filtering, but also compute normalized for display
+        # Normalize scores to [0, 1] range using Min-Max normalization
+        # This ensures both semantic and keyword scores are on the same scale
         semantic_norm = _minmax_normalize(semantic_dict)
         keyword_norm = _minmax_normalize(keyword_scores)
         
-        SEMANTIC_WEIGHT = 0.7
-        KEYWORD_WEIGHT = 0.3
+        # --- HYBRID SCORING FORMULA ---
+        # Final_Score = (γ × S_Sem) + (β × S_BM25) + (λ × S_Loc) + (δ × S_Ind)
+        # 
+        # Where:
+        #   S_Sem    = Normalized semantic similarity (SentenceTransformer cosine similarity)
+        #   S_BM25   = Normalized BM25 keyword score
+        #   S_Loc    = Location match score (0 or 1)
+        #   S_Ind    = Industry classification match score (0 to 1, partial matches supported)
+        #   γ (gamma)  = semantic_weight (configurable, default 0.65)
+        #   β (beta)   = keyword_weight (configurable, default 0.20)
+        #   λ (lambda) = location_weight (configurable, default 0.05)
+        #   δ (delta)  = industry_weight (configurable, default 0.10)
+        #
+        # This hybrid approach combines:
+        #   - Semantic understanding (conceptual relevance)
+        #   - Keyword matching (exact term matching)
+        #   - Location preference (soft constraint)
+        #   - Industry classification (secondary hard filter as boost)
         
-        # Use RAW scores for ranking to maintain absolute relevance threshold
+        # Get weights from instance configuration
+        ALPHA = self.semantic_weight   # γ (gamma) in the formula
+        BETA = self.keyword_weight     # β (beta) in the formula
+        GAMMA = self.location_weight   # λ (lambda) in the formula
+        DELTA = self.industry_weight   # δ (delta) in the formula - NEW
+        
+        print(f"[DEBUG] Hybrid scoring weights: Semantic={ALPHA:.2f}, Keyword={BETA:.2f}, Location={GAMMA:.2f}, Industry={DELTA:.2f}")
+        
+        # Calculate final combined scores
         combined_scores = {}
         for company_id in semantic_dict:
-            # Raw semantic similarity (cosine similarity, already 0-1 range)
-            sem_score_raw = semantic_dict.get(company_id, 0.0)
-            # Keyword scores need normalization since BM25 range varies
+            # Normalized semantic similarity (0-1 range)
+            sem_score_norm = semantic_norm.get(company_id, 0.0)
+            # Normalized keyword score (0-1 range)
             kw_score_norm = keyword_norm.get(company_id, 0.0)
-            # Combine: use raw semantic + normalized keyword
-            combined_scores[company_id] = SEMANTIC_WEIGHT * sem_score_raw + KEYWORD_WEIGHT * kw_score_norm
+            # Location match score (1.0 if matches, 0.0 if not)
+            loc_score = location_match_scores.get(company_id, 0.0)
+            # Industry classification match score (0-1 range, supports partial matches)
+            ind_score = industry_match_scores.get(company_id, 0.0)
+            
+            # Apply the weighted combination (Final Score)
+            # Formula: Final_Score = (γ × S_Sem) + (β × S_BM25) + (λ × S_Loc) + (δ × S_Ind)
+            combined_scores[company_id] = (ALPHA * sem_score_norm) + \
+                                          (BETA * kw_score_norm) + \
+                                          (GAMMA * loc_score) + \
+                                          (DELTA * ind_score)
         
         # Get top candidates based on content relevance
         # For facility queries, we need a larger candidate pool since we'll filter by actual facility data
@@ -481,9 +790,11 @@ class EnhancedQueryEngine:
         score_map = dict(sorted_ids)
         
         top = doc_index_filtered[doc_index_filtered["CompanyId"].isin(candidate_ids)].copy()
-        top["similarity_score"] = top["CompanyId"].map(score_map)
-        top["semantic_score"] = top["CompanyId"].map(semantic_dict)  # Raw semantic score
-        top["keyword_score"] = top["CompanyId"].map(keyword_norm)   # Normalized keyword score
+        top["similarity_score"] = top["CompanyId"].map(score_map)  # Final combined score (hybrid)
+        top["semantic_score"] = top["CompanyId"].map(semantic_norm)  # Normalized semantic score (S_Sem)
+        top["keyword_score"] = top["CompanyId"].map(keyword_norm)   # Normalized keyword score (S_BM25)
+        top["location_score"] = top["CompanyId"].map(location_match_scores)  # Location match score (0 or 1)
+        top["industry_score"] = top["CompanyId"].map(industry_match_scores)  # Industry classification match score (0-1)
 
         # Join with CompanyDetail for full info
         top["CompanyId"] = top["CompanyId"].astype(str)
@@ -499,11 +810,21 @@ class EnhancedQueryEngine:
             row = res.loc[idx]
             reasons = []
             
+            # Show location boost if applicable
+            loc_score = row.get('location_score', 0)
             if query_location:
-                reasons.append(f"Location: {query_location}")
+                if loc_score > 0:
+                    reasons.append(f"Location Match: {query_location} (λ={GAMMA:.2f})")
+                else:
+                    reasons.append(f"Location: {query_location} (no match)")
             
-            reasons.append(f"Semantic: {row.get('semantic_score', 0):.3f}")
-            reasons.append(f"Keyword: {row.get('keyword_score', 0):.3f}")
+            # Show industry classification boost if applicable
+            ind_score = row.get('industry_score', 0)
+            if industry_keywords and ind_score > 0:
+                reasons.append(f"Industry Match: {ind_score:.2f} (δ={DELTA:.2f})")
+            
+            reasons.append(f"Semantic: {row.get('semantic_score', 0):.3f} (γ={ALPHA:.2f})")
+            reasons.append(f"Keyword: {row.get('keyword_score', 0):.3f} (β={BETA:.2f})")
             
             res.at[idx, "selection_reason"] = " | ".join(reasons)
         
