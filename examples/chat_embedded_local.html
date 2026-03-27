@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Embedded Chatbot - Production (HTTPS)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            color: #007bff;
+        }
+
+        .info {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+
+        .status {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #28a745;
+        }
+
+        .status.error {
+            border-left-color: #dc3545;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-indicator.green {
+            background: #28a745;
+        }
+
+        .status-indicator.red {
+            background: #dc3545;
+        }
+
+        .status-indicator.yellow {
+            background: #ffc107;
+        }
+
+        /* Floating chat button */
+        #chat-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #007bff;
+            color: white;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 9998;
+        }
+
+        #chat-button:hover {
+            background: #0056b3;
+        }
+
+        /* Chatbot container */
+        #chatbot-container {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 400px;
+            height: 600px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            background: white;
+            z-index: 9999;
+        }
+
+        /* Header */
+        #chatbot-header {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: #007bff;
+            color: white;
+            border-radius: 8px 8px 0 0;
+        }
+
+        #close-button {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 20px;
+        }
+
+        /* Iframe */
+        #chatbot-iframe {
+            width: 100%;
+            height: calc(100% - 50px);
+            border: none;
+        }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            #chatbot-container {
+                width: calc(100vw - 20px);
+                height: calc(100vh - 100px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Embedded Chatbot - Production (HTTPS)</h1>
+    
+    <div id="status-box" class="status">
+        <h3><span class="status-indicator yellow" id="status-dot"></span><span id="status-text">Checking status...</span></h3>
+        <p id="status-message">Please wait...</p>
+    </div>
+    
+    <div class="info">
+        <h3>How It Works (Auto-Login with HTTPS):</h3>
+        <ol>
+            <li>User details are hardcoded in this page (lines 166-170)</li>
+            <li>Click the 💬 button</li>
+            <li>Page calls <code>/api/chatbot-login</code> with user details</li>
+            <li>Server creates session + returns JWT token</li>
+            <li>Chatbot opens in iframe with SSO token</li>
+            <li><strong>HTTPS + SameSite=None = Cookies work in iframes! ✓</strong></li>
+        </ol>
+        <p><strong>Production URLs:</strong></p>
+        <ul>
+            <li>Chatbot: <code>https://chat.aichatbot.schemes.ddpdashboard.gov.in</code></li>
+            <li>Login: <code>https://login.aichatbot.schemes.ddpdashboard.gov.in</code></li>
+        </ul>
+        <p><strong>For Your App:</strong> Replace <code>USER_DETAILS</code> with actual user info from your application's session.</p>
+    </div>
+
+    <p>Click the chat button in the bottom-right corner to open the AI chatbot.</p>
+
+    <!-- Chat Button -->
+    <button id="chat-button" onclick="toggleChatbot()">💬</button>
+
+    <!-- Chatbot Container -->
+    <div id="chatbot-container">
+        <div id="chatbot-header">
+            <span>AI Assistant</span>
+            <button id="close-button" onclick="closeChatbot()">&times;</button>
+        </div>
+        <iframe id="chatbot-iframe"></iframe>
+    </div>
+
+    <script>
+        let chatbotOpen = false;
+
+        // ============================================================
+        // USER DETAILS - Your webpage would get these from your app
+        // ============================================================
+        const USER_DETAILS = {
+            user_id: "john.doe",      // From your application's session
+            name: "John Doe",         // User's display name
+            email: "john@example.com" // User's email
+        };
+
+        // Production HTTPS URL
+        const CHATBOT_BASE_URL = 'https://chat.aichatbot.schemes.ddpdashboard.gov.in';
+
+        async function toggleChatbot() {
+            const container = document.getElementById('chatbot-container');
+            const iframe = document.getElementById('chatbot-iframe');
+
+            if (!chatbotOpen) {
+                try {
+                    console.log('[DEBUG] Logging in with user details:', USER_DETAILS.user_id);
+                    
+                    // Direct login with user details (no separate login page needed!)
+                    const response = await fetch(`${CHATBOT_BASE_URL}/api/chatbot-login`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'include',  // Important: stores session cookie
+                        body: JSON.stringify(USER_DETAILS)
+                    });
+                    
+                    console.log('[DEBUG] Response status:', response.status);
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || `HTTP ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('[DEBUG] Login successful! Token received:', data.token ? 'Yes' : 'No');
+                    console.log('[DEBUG] Session created:', data.session_created);
+                    console.log('[DEBUG] Logged in as:', data.name);
+
+                    if (!data.token) {
+                        throw new Error('No token in response');
+                    }
+
+                    // Use the token to authenticate the iframe via SSO endpoint
+                    // With local HTTP, cookies work perfectly in same-origin iframes!
+                    console.log('[DEBUG] Loading chatbot iframe with SSO token...');
+                    iframe.src = `${CHATBOT_BASE_URL}/aichat/sso?token=${data.token}`;
+                    
+                    // Show container
+                    container.style.display = 'block';
+                    chatbotOpen = true;
+                    console.log('[DEBUG] Chatbot opened successfully!');
+                } catch (error) {
+                    console.error('[ERROR] Failed to load chatbot:', error);
+                    
+                    let errorMsg = 'Failed to load chatbot.\n\n';
+                    
+                    if (error.message.includes('Failed to fetch')) {
+                        errorMsg += '❌ Cannot connect to server!\n\n';
+                        errorMsg += 'Please ensure the chatbot server is running.'
+                    } else {
+                        errorMsg += '❌ Error: ' + error.message + '\n\n';
+                        errorMsg += 'Check browser console (F12) for details';
+                    }
+                    
+                    alert(errorMsg);
+                }
+            } else {
+                closeChatbot();
+            }
+        }
+
+        function closeChatbot() {
+            document.getElementById('chatbot-container').style.display = 'none';
+            chatbotOpen = false;
+        }
+
+        // Close on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && chatbotOpen) {
+                closeChatbot();
+            }
+        });
+
+        // Listen for logout message from iframe
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'CHATBOT_LOGOUT') {
+                console.log('[INFO] Logout message received from chatbot iframe');
+                closeChatbot();
+                // Clear the iframe src to ensure session is fully cleared
+                document.getElementById('chatbot-iframe').src = '';
+                alert('You have been logged out successfully.');
+            }
+        });
+
+        // Check status on page load
+        async function checkStatus() {
+            const statusBox = document.getElementById('status-box');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            const statusMessage = document.getElementById('status-message');
+
+            try {
+                // Check if server is running
+                const healthResponse = await fetch(`${CHATBOT_BASE_URL}/aichat/health`);
+                
+                if (!healthResponse.ok) {
+                    throw new Error('Server not responding');
+                }
+
+                // Server is running - show ready status
+                statusBox.className = 'status';
+                statusDot.className = 'status-indicator green';
+                statusText.textContent = 'Ready!';
+                statusMessage.innerHTML = '✅ Server is running.<br><br>' +
+                    '<strong>User details configured:</strong><br>' +
+                    '• User ID: ' + USER_DETAILS.user_id + '<br>' +
+                    '• Name: ' + USER_DETAILS.name + '<br>' +
+                    '• Email: ' + USER_DETAILS.email + '<br><br>' +
+                    'Click the 💬 button to open the chatbot!<br>' +
+                    '<small>(Login will happen automatically via HTTPS)</small>';
+
+            } catch (error) {
+                console.error('[ERROR] Status check failed:', error);
+                statusBox.className = 'status error';
+                statusDot.className = 'status-indicator red';
+                statusText.textContent = 'Server Not Running';
+                statusMessage.innerHTML = '❌ Cannot connect to server.<br><br>' +
+                    '<strong>Please start the chatbot server:</strong><br>' +
+                    '<code>python app.py</code><br><br>' +
+                    'Server should be running at:<br>' +
+                    '<code>' + CHATBOT_BASE_URL + '</code>';
+            }
+        }
+
+        // Run status check when page loads
+        window.addEventListener('load', checkStatus);
+    </script>
+</body>
+</html>

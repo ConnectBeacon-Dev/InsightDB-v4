@@ -220,6 +220,3 @@ https://connectbeacon.com/aichatbot
 
 - taskkill /F /IM nginx.exe
 - python.exe .\stop_servers.py
-
-### Embedding examples
-- Run the ```examples/chat_embedded_local.html```

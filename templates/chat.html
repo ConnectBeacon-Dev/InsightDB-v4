@@ -12,7 +12,9 @@
            --user:#e8f3ff; --bot:#eefbf2; --error:#fee2e2; --shadow:0 6px 18px rgba(0,0,0,.06); }
     *{ box-sizing:border-box }
     body{ margin:0; background:var(--bg); font-family:system-ui,Arial,sans-serif; color:#0f172a; }
-    header{ background:var(--brand); color:#fff; padding:14px 18px; font-weight:700; }
+    header{ background:var(--brand); color:#fff; padding:14px 18px; font-weight:700; display:flex; justify-content:space-between; align-items:center; }
+    .logout-btn{ background:rgba(255,255,255,0.2); color:#fff; border:none; padding:8px 16px; border-radius:8px; cursor:pointer; font-weight:600; transition:all 0.2s; }
+    .logout-btn:hover{ background:rgba(255,255,255,0.3); }
     main{ max-width:900px; margin:18px auto; padding:0 14px; }
     #chat{ background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); height:65vh; overflow:auto; padding:16px; }
     .row{ display:flex; gap:10px; margin:12px 0; align-items:flex-start }
@@ -30,7 +32,10 @@
   </style>
 </head>
 <body>
-  <header>Defense India Chatbot</header>
+  <header>
+    <span>Defense India Chatbot</span>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+  </header>
   <main>
     <div id="chat"></div>
     <div class="composer">
@@ -72,13 +77,13 @@
             if (done || this.closed) break;
             buf += decoder.decode(value, {stream:true});
             let idx;
-            while ((idx = buf.indexOf('\\n\\n')) >= 0) {
+            while ((idx = buf.indexOf('\n\n')) >= 0) {
               const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
-              const lines = raw.split(/\\r?\\n/);
+              const lines = raw.split(/\r?\n/);
               let event = 'message', data = '';
               for (const line of lines) {
                 if (line.startsWith('event:')) event = line.slice(6).trim();
-                else if (line.startsWith('data:')) data += (data ? '\\n' : '') + line.slice(5).trim();
+                else if (line.startsWith('data:')) data += (data ? '\n' : '') + line.slice(5).trim();
               }
               (this.listeners[event]||[]).forEach(cb => cb({data}));
             }
@@ -93,7 +98,7 @@
       const text = q.value.trim(); if(!text) return;
       add('user', text); q.value = ''; const t = thinking();
 
-      const sse = new EventSourcePolyfill('/ask_stream/', {
+      const sse = new EventSourcePolyfill('/aichat/ask_stream/', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         payload: JSON.stringify({ query: text }),
       });
@@ -115,6 +120,36 @@
 
     send.addEventListener('click', sendQuery);
     q.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendQuery(); }});
+
+    // Logout function
+    async function logout() {
+      if (!confirm('Are you sure you want to logout?')) return;
+      
+      try {
+        const response = await fetch('/aichat/logout', {
+          method: 'POST',
+          credentials: 'include'
+        });
+        
+        if (response.ok || response.status === 204) {
+          // Check if we're in an iframe
+          if (window.parent !== window) {
+            // We're in an iframe - notify parent to close the chatbot
+            window.parent.postMessage({ type: 'CHATBOT_LOGOUT' }, '*');
+            // Show a message instead of redirecting
+            document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#6b7280;"><div style="text-align:center;"><h2>Logged Out Successfully</h2><p>You can close this window.</p></div></div>';
+          } else {
+            // Standalone mode - redirect to login page
+            window.location.href = '{{ login_url }}';
+          }
+        } else {
+          alert('Logout failed. Please try again.');
+        }
+      } catch (error) {
+        console.error('Logout error:', error);
+        alert('Logout failed. Please try again.');
+      }
+    }
   </script>
 </body>
 </html>

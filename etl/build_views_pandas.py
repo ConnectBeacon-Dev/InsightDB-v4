@@ -9,8 +9,7 @@ Usage:
 
 What it does:
   1) Scans --inputs for likely CSVs and builds normalized views:
-       CompanyDetail.csv, Certification.csv, Facilities.csv, Products.csv
-     (Facilities merges R&D/Test/Mfg sources into one table with FacilityType)
+       CompanyDetail.csv, Certification.csv, Products.csv, and various detail views
   2) Applies hard-wired "TableScan" field selection (no Excel required)
   3) Writes merged, company-centric outputs:
        MergedCompanyView.csv, MergedCompanyView.json, MergedCompanyView.jsonl
@@ -24,84 +23,76 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 # Import classification utilities
-from add_classifications import add_company_classifications, write_company_classifications
 from entity_classification_helpers import classify_product, classify_facility, classify_certification
 
 # ================== INLINE SCHEMA CONFIG (no Excel) ==================
 # Which columns to KEEP for each output view (case-insensitive match).
 TABLE_FIELDS: Dict[str, List[str]] = {
     "companydetail": [
-        "Id", "CompanyRefNo", "CompanyName", "LegalName",
-        "IndustryDomain", "IndustrySubdomain", "CoreExpertise",
-        "OrgType", "Scale", "CompanyStatus", "CompanySubCategory", "ListingStatus",
-        "Address", "City", "State", "Country", "Pincode",
-        "Website", "Email", "Phone",
-        "CIN", "GST", "PAN", "DUNS",
-        "Lat", "Lng"
+        "Id", "CINNumber", "Pan", "GSTNumber", "CompanyRefNo", "CompanyName",
+        "POC_Email", "Phone", "EmailId", "Address", "CityName", "Pincode",
+        "CountryName", "DisplayCountryName", "District", "State", "Website",
+        "CompanyScale", "Organisation_Type", "IndustryDomainName", "IndustrySubDomainName",
+        "CoreExpertiseName", "CompanyRegistrationDate", "CompanyStatus",
+        "CompanyCategory", "CompanySubCategory", "CompanyClass", "ListingStatus",
+        "CompanyROC", "CompanyIndustrialClassification",
+        "OtherScale", "OtherCompanyType", "OtherCompanyCoreExpertise",
+        "OtherCompIndDomain", "OtherCompIndSubDomain",
+        "is_msme", "is_government", "is_private",
+        # Aggregated facility and product information
+        "HasCertifications", "CertificationCount", "CertificationTypes",
+        "HasProducts", "ProductCount", "ProductNames", "ProductCategories",
+        "HasRDFacility", "RDFacilityCount", "RDCategories", "RDSubCategories",
+        "HasTestFacility", "TestFacilityCount", "TestCategories", "TestSubCategories"
     ],
-    "companydetailenriched": [
-        "Id", "CompanyRefNo", "CompanyName", "LegalName",
-        "IndustryDomain", "IndustrySubdomain", "CoreExpertise",
-        "OrgType", "Scale", "CompanyStatus", "CompanySubCategory", "ListingStatus",
-        "Address", "City", "State", "Country", "Pincode",
-        "Website", "Email", "Phone",
-        "CIN", "GST", "PAN", "DUNS",
-        "Lat", "Lng",
-        # Classification fields
-        "is_union_government", "is_state_government", "is_government_company",
-        "is_private_company", "is_msme", "is_listed_company", "is_active_company",
-        "is_defence_company", "company_size_category", "company_type_normalized"
-    ],
-    "certification": [
-        "CompanyMaster_FK_ID",
-        "CertificationType", "Number", "Issuer", "Status",
-        "Year", "ValidFrom", "ValidTo"
-    ],
-    "facilities": [
-        "CompanyMaster_FK_ID",
-        "FacilityType", "Category", "SubCategory", "FacilityName",
-        "Description", "Equipment", "Capability", "Range", "Accreditation"
+    "certificationdetail": [
+        "CompanyRefNo", "CompanyName",
+        "Certification_Type", "Certificate_No",
+        "Certificate_StartDate", "Certificate_EndDate",
+        "Cert_Type"
     ],
     "products": [
         "CompanyMaster_FK_ID",
         "ProductId", "ProductName", "Category", "ProductType",
         "Description", "HSCode", "IsConsumable", "DefencePlatform", "TechArea"
     ],
+    "rdfacilitydetails": [
+        "CompanyMaster_FK_ID", "CompanyName", "IDMId", "CompanyRefNo",
+        "RDCategoryName", "RDSubCategoryName"
+    ],
+    "testfacilitydetails": [
+        "CompanyMaster_FK_ID", "CompanyName", "CompanyRefNo", "TestDetails",
+        "IsNablAccredited", "CategoryName", "SubCategoryName"
+    ],
+    "productdetails": [
+        "CompanyMaster_FK_ID", "CompanyName", "CompanyRefNo", "ProductName",
+        "ProductDesc", "NSNNumber", "HSNCode", "FutureExpansion",
+        "AnnualProductionCapacity", "ProductCertificateDet", "ProductTypeName",
+        "Name_of_Defence_Platform", "PTAName", "SalientFeature", "PARTNo",
+        "Remarks", "ItemExported", "OtherDefencePlatform", "OtherTypeProduct", "OtherPTA"
+    ],
+    "turnoverdetails": [
+        "Company_FK_Id", "CompanyName", "Year", "Amount"
+    ],
     # If you output "CompanyDetailEnriched.csv", you can add key list here too.
 }
 
-# Optional: named filters you want available downstream (e.g., “government”).
+# Optional: named filters you want available downstream (e.g., "government").
 FILTER_PRESETS = {
     "government": {
-        "table": "CompanyClassifications", "field": "is_government_company",
-        "include_values": [True, "true", "True", "1"]
-    },
-    "union_government": {
-        "table": "CompanyClassifications", "field": "is_union_government",
-        "include_values": [True, "true", "True", "1"]
-    },
-    "state_government": {
-        "table": "CompanyClassifications", "field": "is_state_government",
+        "table": "CompanyDetail", "field": "is_government",
         "include_values": [True, "true", "True", "1"]
     },
     "private_company": {
-        "table": "CompanyClassifications", "field": "is_private_company",
+        "table": "CompanyDetail", "field": "is_private",
         "include_values": [True, "true", "True", "1"]
     },
     "msme": {
-        "table": "CompanyClassifications", "field": "is_msme",
+        "table": "CompanyDetail", "field": "is_msme",
         "include_values": [True, "true", "True", "1"]
     },
     "defence": {
-        "table": "CompanyClassifications", "field": "is_defence_company",
-        "include_values": [True, "true", "True", "1"]
-    },
-    "listed_company": {
-        "table": "CompanyClassifications", "field": "is_listed_company",
-        "include_values": [True, "true", "True", "1"]
-    },
-    "active_company": {
-        "table": "CompanyClassifications", "field": "is_active_company",
+        "table": "CompanyDetail", "field": "is_defence",
         "include_values": [True, "true", "True", "1"]
     },
 }
@@ -113,13 +104,9 @@ MATCH_HINTS = {
         "alternate_name_fields": ["CompanyName", "LegalName"],
         "geo_fields": ["City", "State", "Address"]
     },
-    "certification": {
-        "foreign_keys": ["CompanyMaster_FK_ID"],
-        "match_fields": ["CertificationType", "Number", "Issuer"]
-    },
-    "facilities": {
-        "foreign_keys": ["CompanyMaster_FK_ID"],
-        "match_fields": ["FacilityType", "Category", "SubCategory", "FacilityName", "Description"]
+    "certificationdetail": {
+        "foreign_keys": ["CompanyRefNo"],
+        "match_fields": ["Certification_Type", "Certificate_No", "Cert_Type"]
     },
     "products": {
         "foreign_keys": ["CompanyMaster_FK_ID"],
@@ -249,84 +236,115 @@ def _select_cols(df: pd.DataFrame, rename_map: Dict[str,str]) -> pd.DataFrame:
 def _enrich_with_master_tables(df: pd.DataFrame, inputs: Path) -> pd.DataFrame:
     """
     Enrich company data by joining with master reference tables to get actual text values
-    instead of FK IDs (e.g., IndustryDomain text instead of IndustryDomain_Fk_Id).
+    instead of FK IDs. Keeps the resolved names as separate columns.
     """
     if df.empty:
         return df
     
     # Load master tables
+    country_master = _read_csv(inputs / "dbo.CountryMaster.csv")
     industry_domain_master = _read_csv(inputs / "dbo.IndustryDomainMaster.csv")
     industry_subdomain_master = _read_csv(inputs / "dbo.IndustrySubdomainMaster.csv")
     org_type_master = _read_csv(inputs / "dbo.OrganisationTypeMaster.csv")
-    scale_master = _read_csv(inputs / "dbo.ScaleMaster.csv")
+    scale_master = _read_csv(inputs / "dbo.CompanyScaleMaster.csv")
     core_expertise_master = _read_csv(inputs / "dbo.CompanyCoreExpertiseMaster.csv")
+    
+    # Join Country
+    if not country_master.empty and 'Country_Fk_Id' in df.columns:
+        country_master_renamed = country_master.rename(columns={'Id': 'Country_Fk_Id'})
+        cols_to_merge = ['Country_Fk_Id']
+        if 'CountryName' in country_master.columns:
+            cols_to_merge.append('CountryName')
+        if 'DisplayCountryName' in country_master.columns:
+            cols_to_merge.append('DisplayCountryName')
+        if len(cols_to_merge) > 1:
+            df = df.merge(
+                country_master_renamed[cols_to_merge], 
+                on='Country_Fk_Id', 
+                how='left'
+            )
     
     # Join IndustryDomain
     if not industry_domain_master.empty and 'IndustryDomain_Fk_Id' in df.columns:
-        industry_domain_master = industry_domain_master.rename(columns={'Id': 'IndustryDomain_Fk_Id'})
+        industry_domain_master_renamed = industry_domain_master.rename(columns={'Id': 'IndustryDomain_Fk_Id'})
         if 'IndustryDomainName' in industry_domain_master.columns:
             df = df.merge(
-                industry_domain_master[['IndustryDomain_Fk_Id', 'IndustryDomainName']], 
+                industry_domain_master_renamed[['IndustryDomain_Fk_Id', 'IndustryDomainName']], 
                 on='IndustryDomain_Fk_Id', 
                 how='left'
             )
-            df['IndustryDomain'] = df['IndustryDomainName'].fillna('')
-            df = df.drop(columns=['IndustryDomainName'], errors='ignore')
     
     # Join IndustrySubdomain
     if not industry_subdomain_master.empty and 'IndustrySubDomain_Fk_Id' in df.columns:
-        industry_subdomain_master = industry_subdomain_master.rename(columns={'Id': 'IndustrySubDomain_Fk_Id'})
-        if 'SubDomainName' in industry_subdomain_master.columns:
+        industry_subdomain_master_renamed = industry_subdomain_master.rename(columns={'Id': 'IndustrySubDomain_Fk_Id'})
+        # Try both possible column names
+        subdomain_col = None
+        if 'IndustrySubDomainName' in industry_subdomain_master.columns:
+            subdomain_col = 'IndustrySubDomainName'
+        elif 'SubDomainName' in industry_subdomain_master.columns:
+            subdomain_col = 'SubDomainName'
+            industry_subdomain_master_renamed = industry_subdomain_master_renamed.rename(columns={'SubDomainName': 'IndustrySubDomainName'})
+        
+        if subdomain_col:
+            merge_cols = ['IndustrySubDomain_Fk_Id', 'IndustrySubDomainName'] if subdomain_col == 'SubDomainName' else ['IndustrySubDomain_Fk_Id', subdomain_col]
             df = df.merge(
-                industry_subdomain_master[['IndustrySubDomain_Fk_Id', 'SubDomainName']], 
+                industry_subdomain_master_renamed[merge_cols], 
                 on='IndustrySubDomain_Fk_Id', 
                 how='left'
             )
-            df['IndustrySubdomain'] = df['SubDomainName'].fillna('')
-            df = df.drop(columns=['SubDomainName'], errors='ignore')
     
     # Join OrgType
     if not org_type_master.empty and 'CompanyType_Fk_Id' in df.columns:
-        org_type_master = org_type_master.rename(columns={'Id': 'CompanyType_Fk_Id'})
-        if 'OrganisationType' in org_type_master.columns:
+        org_type_master_renamed = org_type_master.rename(columns={'Id': 'CompanyType_Fk_Id'})
+        # Try both possible column names
+        if 'Organisation_Type' in org_type_master.columns:
             df = df.merge(
-                org_type_master[['CompanyType_Fk_Id', 'OrganisationType']], 
+                org_type_master_renamed[['CompanyType_Fk_Id', 'Organisation_Type']], 
                 on='CompanyType_Fk_Id', 
                 how='left'
             )
-            df['OrgType'] = df['OrganisationType'].fillna('')
-            df = df.drop(columns=['OrganisationType'], errors='ignore')
+        elif 'OrganisationType' in org_type_master.columns:
+            org_type_master_renamed = org_type_master_renamed.rename(columns={'OrganisationType': 'Organisation_Type'})
+            df = df.merge(
+                org_type_master_renamed[['CompanyType_Fk_Id', 'Organisation_Type']], 
+                on='CompanyType_Fk_Id', 
+                how='left'
+            )
     
     # Join Scale
     if not scale_master.empty and 'CompanyScale_Fk_Id' in df.columns:
-        scale_master = scale_master.rename(columns={'Id': 'CompanyScale_Fk_Id'})
-        if 'ScaleName' in scale_master.columns:
+        scale_master_renamed = scale_master.rename(columns={'Id': 'CompanyScale_Fk_Id'})
+        # Try both possible column names
+        if 'CompanyScale' in scale_master.columns:
             df = df.merge(
-                scale_master[['CompanyScale_Fk_Id', 'ScaleName']], 
+                scale_master_renamed[['CompanyScale_Fk_Id', 'CompanyScale']], 
                 on='CompanyScale_Fk_Id', 
                 how='left'
             )
-            df['Scale'] = df['ScaleName'].fillna('')
-            df = df.drop(columns=['ScaleName'], errors='ignore')
+        elif 'ScaleName' in scale_master.columns:
+            scale_master_renamed = scale_master_renamed.rename(columns={'ScaleName': 'CompanyScale'})
+            df = df.merge(
+                scale_master_renamed[['CompanyScale_Fk_Id', 'CompanyScale']], 
+                on='CompanyScale_Fk_Id', 
+                how='left'
+            )
     
     # Join CoreExpertise
     if not core_expertise_master.empty and 'CompanyCoreExpertise_Fk_Id' in df.columns:
-        core_expertise_master = core_expertise_master.rename(columns={'Id': 'CompanyCoreExpertise_Fk_Id'})
-        if 'CoreExpertise' in core_expertise_master.columns:
+        core_expertise_master_renamed = core_expertise_master.rename(columns={'Id': 'CompanyCoreExpertise_Fk_Id'})
+        if 'CoreExpertiseName' in core_expertise_master.columns:
             df = df.merge(
-                core_expertise_master[['CompanyCoreExpertise_Fk_Id', 'CoreExpertise']], 
+                core_expertise_master_renamed[['CompanyCoreExpertise_Fk_Id', 'CoreExpertiseName']], 
                 on='CompanyCoreExpertise_Fk_Id', 
                 how='left'
             )
-            # CoreExpertise column already exists from the merge
-        elif 'CoreExpertiseName' in core_expertise_master.columns:
+        elif 'CoreExpertise' in core_expertise_master.columns:
+            core_expertise_master_renamed = core_expertise_master_renamed.rename(columns={'CoreExpertise': 'CoreExpertiseName'})
             df = df.merge(
-                core_expertise_master[['CompanyCoreExpertise_Fk_Id', 'CoreExpertiseName']], 
+                core_expertise_master_renamed[['CompanyCoreExpertise_Fk_Id', 'CoreExpertiseName']], 
                 on='CompanyCoreExpertise_Fk_Id', 
                 how='left'
             )
-            df['CoreExpertise'] = df['CoreExpertiseName'].fillna('')
-            df = df.drop(columns=['CoreExpertiseName'], errors='ignore')
     
     return df
 
@@ -346,96 +364,321 @@ def build_company_detail(inputs: Path) -> pd.DataFrame:
     # Enrich with master table lookups
     df = _enrich_with_master_tables(df, inputs)
     
-    # Light canonicalization
+    # Standardize column names
     ren = {
         "Company Name": "CompanyName",
-        "Legal Name": "LegalName",
-        "Industry": "IndustryDomain",
-        "Industry Domain": "IndustryDomain",
-        "Industry Subdomain": "IndustrySubdomain",
-        "Org Type": "OrgType",
+        "CIN": "CINNumber",
+        "GST": "GSTNumber",
+        "PAN": "Pan",
+        "Email": "EmailId",
+        "City": "CityName",
         "PinCode": "Pincode",
+        "WebSite": "Website",
+        "Web Site": "Website",
+        "POCEmail": "POC_Email",
+        "POC Email": "POC_Email",
+        "PoC_Email": "POC_Email",
     }
-    df = _select_cols(df, ren).fillna("")
+    df = _select_cols(df, ren)
+    
+    # Add classification fields
+    df = _add_simple_classifications(df)
+    
+    df = df.fillna("")
     return df
 
 
-def build_certification_view(inputs: Path) -> pd.DataFrame:
+def _add_simple_classifications(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add simple classification fields: is_msme, is_government, is_private
+    """
+    if df.empty:
+        return df
+    
+    # is_msme: from Organisation_Type or CompanyScale
+    df['is_msme'] = False
+    if 'Organisation_Type' in df.columns:
+        df['is_msme'] = df['Organisation_Type'].str.contains(
+            'micro|small|medium|msme', case=False, na=False, regex=True
+        )
+    if 'CompanyScale' in df.columns and not df['is_msme'].any():
+        df['is_msme'] = df['is_msme'] | df['CompanyScale'].str.contains(
+            'micro|small|medium|msme', case=False, na=False, regex=True
+        )
+    
+    # is_government: from Organisation_Type or CompanySubCategory
+    df['is_government'] = False
+    if 'Organisation_Type' in df.columns:
+        df['is_government'] = df['Organisation_Type'].str.contains(
+            'public limited|psu|dpsu|government', case=False, na=False, regex=True
+        )
+    if 'CompanySubCategory' in df.columns:
+        df['is_government'] = df['is_government'] | df['CompanySubCategory'].str.contains(
+            'union government company|state government company', case=False, na=False, regex=True
+        )
+    
+    # is_private: inverse of is_government
+    df['is_private'] = ~df['is_government']
+    
+    return df
+
+
+def _enrich_with_aggregated_data(company_df: pd.DataFrame, cert_df: pd.DataFrame, prod_df: pd.DataFrame, 
+                                  rd_fac_df: pd.DataFrame, test_fac_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Enrich CompanyDetail with aggregated information from certifications, products, and facilities.
+    Adds columns like HasCertifications, CertificationTypes, HasProducts, ProductNames, etc.
+    """
+    if company_df.empty:
+        return company_df
+    
+    # Helper function to aggregate text fields
+    def aggregate_text(df, group_key, text_col, sep=", "):
+        """Aggregate unique non-empty values from a text column"""
+        if df.empty or text_col not in df.columns:
+            return pd.DataFrame(columns=[group_key, text_col + '_Agg'])
+        
+        result = df.groupby(group_key)[text_col].apply(
+            lambda x: sep.join(sorted(set(str(v).strip() for v in x if str(v).strip() and str(v).lower() not in ['nan', 'none', ''])))
+        ).reset_index()
+        result.columns = [group_key, text_col + '_Agg']
+        return result
+    
+    # Certification aggregation
+    if not cert_df.empty and 'CompanyRefNo' in cert_df.columns and 'CompanyRefNo' in company_df.columns:
+        # Count certifications
+        cert_counts = cert_df.groupby('CompanyRefNo').size().reset_index(name='CertificationCount')
+        company_df = company_df.merge(cert_counts, on='CompanyRefNo', how='left')
+        
+        # Aggregate certification types
+        if 'Cert_Type' in cert_df.columns:
+            cert_types = aggregate_text(cert_df, 'CompanyRefNo', 'Cert_Type')
+            company_df = company_df.merge(cert_types.rename(columns={'Cert_Type_Agg': 'CertificationTypes'}), 
+                                         on='CompanyRefNo', how='left')
+        
+        # Add HasCertifications flag
+        company_df['HasCertifications'] = company_df['CertificationCount'].fillna(0) > 0
+    else:
+        company_df['HasCertifications'] = False
+        company_df['CertificationCount'] = 0
+        company_df['CertificationTypes'] = ''
+    
+    # Product aggregation
+    if not prod_df.empty and 'CompanyMaster_FK_ID' in prod_df.columns and 'Id' in company_df.columns:
+        # Count products
+        prod_counts = prod_df.groupby('CompanyMaster_FK_ID').size().reset_index(name='ProductCount')
+        prod_counts['CompanyMaster_FK_ID'] = prod_counts['CompanyMaster_FK_ID'].astype(str)
+        company_df['Id_str'] = company_df['Id'].astype(str)
+        company_df = company_df.merge(prod_counts, left_on='Id_str', right_on='CompanyMaster_FK_ID', how='left')
+        company_df = company_df.drop(columns=['CompanyMaster_FK_ID', 'Id_str'])
+        
+        # Aggregate product names
+        if 'ProductName' in prod_df.columns:
+            prod_names = aggregate_text(prod_df, 'CompanyMaster_FK_ID', 'ProductName')
+            prod_names['CompanyMaster_FK_ID'] = prod_names['CompanyMaster_FK_ID'].astype(str)
+            company_df['Id_str'] = company_df['Id'].astype(str)
+            company_df = company_df.merge(prod_names.rename(columns={'ProductName_Agg': 'ProductNames'}), 
+                                         left_on='Id_str', right_on='CompanyMaster_FK_ID', how='left')
+            company_df = company_df.drop(columns=['CompanyMaster_FK_ID', 'Id_str'])
+        
+        # Aggregate product categories
+        if 'Category' in prod_df.columns:
+            prod_cats = aggregate_text(prod_df, 'CompanyMaster_FK_ID', 'Category')
+            prod_cats['CompanyMaster_FK_ID'] = prod_cats['CompanyMaster_FK_ID'].astype(str)
+            company_df['Id_str'] = company_df['Id'].astype(str)
+            company_df = company_df.merge(prod_cats.rename(columns={'Category_Agg': 'ProductCategories'}), 
+                                         left_on='Id_str', right_on='CompanyMaster_FK_ID', how='left')
+            company_df = company_df.drop(columns=['CompanyMaster_FK_ID', 'Id_str'])
+        
+        # Add HasProducts flag
+        company_df['HasProducts'] = company_df['ProductCount'].fillna(0) > 0
+    else:
+        company_df['HasProducts'] = False
+        company_df['ProductCount'] = 0
+        company_df['ProductNames'] = ''
+        company_df['ProductCategories'] = ''
+    
+    # R&D Facility aggregation
+    if not rd_fac_df.empty and 'CompanyMaster_FK_ID' in rd_fac_df.columns and 'Id' in company_df.columns:
+        # Count R&D facilities
+        rd_counts = rd_fac_df.groupby('CompanyMaster_FK_ID').size().reset_index(name='RDFacilityCount')
+        rd_counts['CompanyMaster_FK_ID'] = rd_counts['CompanyMaster_FK_ID'].astype(str)
+        company_df['Id_str'] = company_df['Id'].astype(str)
+        company_df = company_df.merge(rd_counts, left_on='Id_str', right_on='CompanyMaster_FK_ID', how='left')
+        company_df = company_df.drop(columns=['CompanyMaster_FK_ID', 'Id_str'])
+        
+        # Aggregate R&D categories
+        if 'RDCategoryName' in rd_fac_df.columns:
+            rd_cats = aggregate_text(rd_fac_df, 'CompanyMaster_FK_ID', 'RDCategoryName')
+            rd_cats['CompanyMaster_FK_ID'] = rd_cats['CompanyMaster_FK_ID'].astype(str)
+            company_df['Id_str'] = company_df['Id'].astype(str)
+            company_df = company_df.merge(rd_cats.rename(columns={'RDCategoryName_Agg': 'RDCategories'}), 
+                                         left_on='Id_str', right_on='CompanyMaster_FK_ID', how='left')
+            company_df = company_df.drop(columns=['CompanyMaster_FK_ID', 'Id_str'])
+        
+        # Aggregate R&D subcategories
+        if 'RDSubCategoryName' in rd_fac_df.columns:
+            rd_subcats = aggregate_text(rd_fac_df, 'CompanyMaster_FK_ID', 'RDSubCategoryName')
+            rd_subcats['CompanyMaster_FK_ID'] = rd_subcats['CompanyMaster_FK_ID'].astype(str)
+            company_df['Id_str'] = company_df['Id'].astype(str)
+            company_df = company_df.merge(rd_subcats.rename(columns={'RDSubCategoryName_Agg': 'RDSubCategories'}), 
+                                         left_on='Id_str', right_on='CompanyMaster_FK_ID', how='left')
+            company_df = company_df.drop(columns=['CompanyMaster_FK_ID', 'Id_str'])
+        
+        # Add HasRDFacility flag
+        company_df['HasRDFacility'] = company_df['RDFacilityCount'].fillna(0) > 0
+    else:
+        company_df['HasRDFacility'] = False
+        company_df['RDFacilityCount'] = 0
+        company_df['RDCategories'] = ''
+        company_df['RDSubCategories'] = ''
+    
+    # Test Facility aggregation
+    if not test_fac_df.empty and 'CompanyMaster_FK_ID' in test_fac_df.columns and 'Id' in company_df.columns:
+        # Count test facilities
+        test_counts = test_fac_df.groupby('CompanyMaster_FK_ID').size().reset_index(name='TestFacilityCount')
+        test_counts['CompanyMaster_FK_ID'] = test_counts['CompanyMaster_FK_ID'].astype(str)
+        company_df['Id_str'] = company_df['Id'].astype(str)
+        company_df = company_df.merge(test_counts, left_on='Id_str', right_on='CompanyMaster_FK_ID', how='left')
+        company_df = company_df.drop(columns=['CompanyMaster_FK_ID', 'Id_str'])
+        
+        # Aggregate test categories
+        if 'CategoryName' in test_fac_df.columns:
+            test_cats = aggregate_text(test_fac_df, 'CompanyMaster_FK_ID', 'CategoryName')
+            test_cats['CompanyMaster_FK_ID'] = test_cats['CompanyMaster_FK_ID'].astype(str)
+            company_df['Id_str'] = company_df['Id'].astype(str)
+            company_df = company_df.merge(test_cats.rename(columns={'CategoryName_Agg': 'TestCategories'}), 
+                                         left_on='Id_str', right_on='CompanyMaster_FK_ID', how='left')
+            company_df = company_df.drop(columns=['CompanyMaster_FK_ID', 'Id_str'])
+        
+        # Aggregate test subcategories
+        if 'SubCategoryName' in test_fac_df.columns:
+            test_subcats = aggregate_text(test_fac_df, 'CompanyMaster_FK_ID', 'SubCategoryName')
+            test_subcats['CompanyMaster_FK_ID'] = test_subcats['CompanyMaster_FK_ID'].astype(str)
+            company_df['Id_str'] = company_df['Id'].astype(str)
+            company_df = company_df.merge(test_subcats.rename(columns={'SubCategoryName_Agg': 'TestSubCategories'}), 
+                                         left_on='Id_str', right_on='CompanyMaster_FK_ID', how='left')
+            company_df = company_df.drop(columns=['CompanyMaster_FK_ID', 'Id_str'])
+        
+        # Add HasTestFacility flag
+        company_df['HasTestFacility'] = company_df['TestFacilityCount'].fillna(0) > 0
+    else:
+        company_df['HasTestFacility'] = False
+        company_df['TestFacilityCount'] = 0
+        company_df['TestCategories'] = ''
+        company_df['TestSubCategories'] = ''
+    
+    # Fill NaN values with defaults
+    company_df = company_df.fillna({
+        'CertificationCount': 0,
+        'ProductCount': 0,
+        'RDFacilityCount': 0,
+        'TestFacilityCount': 0,
+        'CertificationTypes': '',
+        'ProductNames': '',
+        'ProductCategories': '',
+        'RDCategories': '',
+        'RDSubCategories': '',
+        'TestCategories': '',
+        'TestSubCategories': ''
+    })
+    
+    return company_df
+
+
+def build_certification_detail_view(inputs: Path) -> pd.DataFrame:
+    """Build CertificationDetail view with resolved company and certification type names."""
+    
+    # Helper function to read CSV (copy from build_views_pandas.py)
+    def _read_csv(p: Path) -> pd.DataFrame:
+        if not p.exists():
+            return pd.DataFrame()
+        for encoding in ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']:
+            try:
+                return pd.read_csv(p, dtype=str, encoding=encoding).fillna("")
+            except (UnicodeDecodeError, Exception):
+                continue
+        for encoding in ['utf-8', 'latin-1', 'cp1252']:
+            try:
+                return pd.read_csv(p, dtype=str, sep=";", engine="python", encoding=encoding).fillna("")
+            except Exception:
+                continue
+        return pd.DataFrame()
+    
+    # Helper function to find file (copy from build_views_pandas.py)
+    def _find_file(inputs: Path, name_candidates):
+        for nm in name_candidates:
+            p = inputs / nm
+            if p.exists():
+                return p
+        all_csvs = list(inputs.glob("*.csv"))
+        lower_index = {f.name.lower(): f for f in all_csvs}
+        for nm in name_candidates:
+            nm_l = nm.lower()
+            if nm_l in lower_index:
+                return lower_index[nm_l]
+            for k, f in lower_index.items():
+                if nm_l in k:
+                    return f
+        return None
+    
+    # Helper to ensure FK column
+    def _ensure_fk(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+        if "CompanyMaster_FK_ID" in df.columns:
+            return df
+        for alt in ("CompanyID", "CompanyId", "Id", "MasterId", "CompanyMasterId"):
+            if alt in df.columns:
+                return df.rename(columns={alt: "CompanyMaster_FK_ID"})
+        return df
+    
+    # Find certification file
     p = _find_file(inputs, [
+        "dbo.CompanyCertificationDetail.csv",
         "CompanyCertificationDetail.csv",
         "CompanyCertification.csv",
-        "Certification.csv",
-        "Certifications.csv",
-        "Cert.csv",
     ])
     if not p:
         return pd.DataFrame(columns=[
-            "CompanyMaster_FK_ID","CertificationType","Number","Issuer","Status","Year","ValidFrom","ValidTo"
+            "CompanyRefNo", "CompanyName", "Certification_Type",
+            "Certificate_No", "Certificate_StartDate", "Certificate_EndDate", "Cert_Type"
         ])
+    
     df = _read_csv(p)
     df = _ensure_fk(df)
-    ren = {
-        "CertType": "CertificationType",
-        "Cert Number": "Number",
-        "CertificateNumber": "Number",
-        "IssuedBy": "Issuer",
-        "Valid From": "ValidFrom",
-        "Valid To": "ValidTo",
-    }
-    df = _select_cols(df, ren).fillna("")
-    # keep only useful columns
-    keep = ["CompanyMaster_FK_ID","CertificationType","Number","Issuer","Status","Year","ValidFrom","ValidTo"]
-    df = df[[c for c in df.columns if c in keep]]
-    return df
-
-
-def _read_fac(inputs: Path, name: str, ftype: str) -> pd.DataFrame:
-    p = _find_file(inputs, [name])
-    if not p:
-        return pd.DataFrame()
-    df = _read_csv(p)
-    df = _ensure_fk(df)
-    df["FacilityType"] = ftype
-    ren = {
-        "Sub Category": "SubCategory",
-        "Facility Name": "FacilityName",
-        "Capabilities": "Capability",
-        "Equipments": "Equipment",
-        "AccreditedBy": "Accreditation",
-    }
-    df = _select_cols(df, ren).fillna("")
-    keep = ["CompanyMaster_FK_ID","FacilityType","Category","SubCategory","FacilityName","Description","Equipment","Capability","Range","Accreditation"]
-    return df[[c for c in df.columns if c in keep]]
-
-
-def build_facilities_view(inputs: Path) -> pd.DataFrame:
-    # Union of possible sources, each tagged by FacilityType
-    parts = []
-    # Unified single file variants
-    uni = _find_file(inputs, ["Facilities.csv","CompanyFacilities.csv"])
-    if uni:
-        dfu = _read_csv(uni)
-        dfu = _ensure_fk(dfu)
-        if "FacilityType" not in dfu.columns:
-            # try to infer from filename, else mark as 'TEST'
-            kind = "TEST"
-            parts.append(_select_cols(dfu.assign(FacilityType=kind), {}))
-        else:
-            parts.append(_select_cols(dfu, {}))
-    # Separate files
-    parts.append(_read_fac(inputs, "CompanyRDFacility.csv", "R&D"))
-    parts.append(_read_fac(inputs, "CompanyTestFacility.csv", "TEST"))
-    parts.append(_read_fac(inputs, "CompanyManufacturingFacility.csv", "MFG"))
-
-    parts = [p for p in parts if not p.empty]
-    if not parts:
-        return pd.DataFrame(columns=[
-            "CompanyMaster_FK_ID","FacilityType","Category","SubCategory","FacilityName","Description","Equipment","Capability","Range","Accreditation"
-        ])
-    df = pd.concat(parts, ignore_index=True).fillna("")
-    # Standardize columns
-    keep = ["CompanyMaster_FK_ID","FacilityType","Category","SubCategory","FacilityName","Description","Equipment","Capability","Range","Accreditation"]
-    df = df[[c for c in df.columns if c in keep]]
+    
+    # Load master tables for resolution
+    company_master = _read_csv(inputs / "dbo.CompanyMaster.csv")
+    cert_type_master = _read_csv(inputs / "dbo.CertificationTypeMaster.csv")
+    
+    # Resolve CompanyName from CompanyMaster_FK_ID
+    if not company_master.empty and 'CompanyMaster_FK_ID' in df.columns:
+        company_master_renamed = company_master.rename(columns={'Id': 'CompanyMaster_FK_ID'})
+        cols_to_merge = ['CompanyMaster_FK_ID']
+        if 'CompanyRefNo' in company_master.columns:
+            cols_to_merge.append('CompanyRefNo')
+        if 'CompanyName' in company_master.columns:
+            cols_to_merge.append('CompanyName')
+        
+        if len(cols_to_merge) > 1:
+            df = df.merge(
+                company_master_renamed[cols_to_merge],
+                on='CompanyMaster_FK_ID',
+                how='left'
+            )
+    
+    # Resolve Cert_Type from CertificateType_Fk_Id
+    if not cert_type_master.empty and 'CertificateType_Fk_Id' in df.columns:
+        cert_type_master_renamed = cert_type_master.rename(columns={'Id': 'CertificateType_Fk_Id'})
+        if 'Cert_Type' in cert_type_master.columns:
+            df = df.merge(
+                cert_type_master_renamed[['CertificateType_Fk_Id', 'Cert_Type']],
+                on='CertificateType_Fk_Id',
+                how='left'
+            )
+    
+    df = df.fillna("")
     return df
 
 
@@ -466,9 +709,251 @@ def build_products_view(inputs: Path) -> pd.DataFrame:
     return df
 
 
+def build_rd_facility_details_view(inputs: Path) -> pd.DataFrame:
+    """Build RDFacilityDetails view with resolved company and R&D category names."""
+    
+    # Find R&D facility file
+    p = _find_file(inputs, [
+        "dbo.CompanyRDFacility.csv",
+        "CompanyRDFacility.csv",
+    ])
+    if not p:
+        return pd.DataFrame(columns=[
+            "CompanyMaster_FK_ID", "CompanyName", "IDMId", "CompanyRefNo",
+            "RDCategoryName", "RDSubCategoryName"
+        ])
+    
+    df = _read_csv(p)
+    df = _ensure_fk(df)
+    
+    # Load master tables for resolution
+    company_master = _read_csv(inputs / "dbo.CompanyMaster.csv")
+    rd_category_master = _read_csv(inputs / "dbo.RDCategoryMaster.csv")
+    rd_subcategory_master = _read_csv(inputs / "dbo.RDSubCategoryMaster.csv")
+    
+    # Resolve CompanyName from CompanyMaster_FK_ID
+    if not company_master.empty and 'CompanyMaster_FK_ID' in df.columns:
+        company_master_renamed = company_master.rename(columns={'Id': 'CompanyMaster_FK_ID'})
+        cols_to_merge = ['CompanyMaster_FK_ID']
+        if 'CompanyName' in company_master.columns:
+            cols_to_merge.append('CompanyName')
+        
+        if len(cols_to_merge) > 1:
+            df = df.merge(
+                company_master_renamed[cols_to_merge],
+                on='CompanyMaster_FK_ID',
+                how='left'
+            )
+    
+    # Resolve RDCategoryName from RDCategory_Fk_Id
+    if not rd_category_master.empty and 'RDCategory_Fk_Id' in df.columns:
+        rd_category_master_renamed = rd_category_master.rename(columns={'Id': 'RDCategory_Fk_Id'})
+        if 'RDCategoryName' in rd_category_master.columns:
+            df = df.merge(
+                rd_category_master_renamed[['RDCategory_Fk_Id', 'RDCategoryName']],
+                on='RDCategory_Fk_Id',
+                how='left'
+            )
+    
+    # Resolve RDSubCategoryName from RDSubCategory_Fk_Id
+    if not rd_subcategory_master.empty and 'RDSubCategory_Fk_Id' in df.columns:
+        rd_subcategory_master_renamed = rd_subcategory_master.rename(columns={'Id': 'RDSubCategory_Fk_Id'})
+        if 'RDSubCategoryName' in rd_subcategory_master.columns:
+            df = df.merge(
+                rd_subcategory_master_renamed[['RDSubCategory_Fk_Id', 'RDSubCategoryName']],
+                on='RDSubCategory_Fk_Id',
+                how='left'
+            )
+    
+    df = df.fillna("")
+    return df
+
+
+def build_test_facility_details_view(inputs: Path) -> pd.DataFrame:
+    """Build TestFacilityDetails view with resolved company and test facility category names."""
+    
+    # Find Test facility file
+    p = _find_file(inputs, [
+        "dbo.CompanyTestFacility.csv",
+        "CompanyTestFacility.csv",
+    ])
+    if not p:
+        return pd.DataFrame(columns=[
+            "CompanyMaster_FK_ID", "CompanyName", "CompanyRefNo", "TestDetails",
+            "IsNablAccredited", "CategoryName", "SubCategoryName"
+        ])
+    
+    df = _read_csv(p)
+    df = _ensure_fk(df)
+    
+    # Load master tables for resolution
+    company_master = _read_csv(inputs / "dbo.CompanyMaster.csv")
+    test_category_master = _read_csv(inputs / "dbo.TestFacilityCategoryMaster.csv")
+    test_subcategory_master = _read_csv(inputs / "dbo.TestFacilitySubCategoryMaster.csv")
+    
+    # Resolve CompanyName from CompanyMaster_FK_ID
+    if not company_master.empty and 'CompanyMaster_FK_ID' in df.columns:
+        company_master_renamed = company_master.rename(columns={'Id': 'CompanyMaster_FK_ID'})
+        cols_to_merge = ['CompanyMaster_FK_ID']
+        if 'CompanyName' in company_master.columns:
+            cols_to_merge.append('CompanyName')
+        
+        if len(cols_to_merge) > 1:
+            df = df.merge(
+                company_master_renamed[cols_to_merge],
+                on='CompanyMaster_FK_ID',
+                how='left'
+            )
+    
+    # Resolve CategoryName from TestFacilityCategory_Fk_Id
+    if not test_category_master.empty and 'TestFacilityCategory_Fk_Id' in df.columns:
+        test_category_master_renamed = test_category_master.rename(columns={'Id': 'TestFacilityCategory_Fk_Id'})
+        if 'CategoryName' in test_category_master.columns:
+            df = df.merge(
+                test_category_master_renamed[['TestFacilityCategory_Fk_Id', 'CategoryName']],
+                on='TestFacilityCategory_Fk_Id',
+                how='left'
+            )
+    
+    # Resolve SubCategoryName from TestFacilitySubCategory_Fk_id
+    if not test_subcategory_master.empty and 'TestFacilitySubCategory_Fk_id' in df.columns:
+        test_subcategory_master_renamed = test_subcategory_master.rename(columns={'Id': 'TestFacilitySubCategory_Fk_id'})
+        if 'SubCategoryName' in test_subcategory_master.columns:
+            df = df.merge(
+                test_subcategory_master_renamed[['TestFacilitySubCategory_Fk_id', 'SubCategoryName']],
+                on='TestFacilitySubCategory_Fk_id',
+                how='left'
+            )
+    
+    df = df.fillna("")
+    return df
+
+
+def build_product_details_view(inputs: Path) -> pd.DataFrame:
+    """Build ProductDetails view with resolved company, product type, defence platform, and PTA names."""
+    
+    # Find Products file
+    p = _find_file(inputs, [
+        "dbo.CompanyProducts.csv",
+        "CompanyProducts.csv",
+    ])
+    if not p:
+        return pd.DataFrame(columns=[
+            "CompanyMaster_FK_ID", "CompanyName", "CompanyRefNo", "ProductName",
+            "ProductDesc", "NSNNumber", "HSNCode", "FutureExpansion",
+            "AnnualProductionCapacity", "ProductCertificateDet", "ProductTypeName",
+            "Name_of_Defence_Platform", "PTAName", "SalientFeature", "PARTNo",
+            "Remarks", "ItemExported", "OtherDefencePlatform", "OtherTypeProduct", "OtherPTA"
+        ])
+    
+    df = _read_csv(p)
+    df = _ensure_fk(df)
+    
+    # Load master tables for resolution
+    company_master = _read_csv(inputs / "dbo.CompanyMaster.csv")
+    product_type_master = _read_csv(inputs / "dbo.ProductTypeMaster.csv")
+    defence_platform_master = _read_csv(inputs / "dbo.DefencePlatformMaster.csv")
+    pta_master = _read_csv(inputs / "dbo.PlatformTechAreaMaster.csv")
+    
+    # Resolve CompanyName from CompanyMaster_FK_ID
+    if not company_master.empty and 'CompanyMaster_FK_ID' in df.columns:
+        company_master_renamed = company_master.rename(columns={'Id': 'CompanyMaster_FK_ID'})
+        cols_to_merge = ['CompanyMaster_FK_ID']
+        if 'CompanyName' in company_master.columns:
+            cols_to_merge.append('CompanyName')
+        
+        if len(cols_to_merge) > 1:
+            df = df.merge(
+                company_master_renamed[cols_to_merge],
+                on='CompanyMaster_FK_ID',
+                how='left'
+            )
+    
+    # Resolve ProductTypeName from ProductType_Fk_Id
+    if not product_type_master.empty and 'ProductType_Fk_Id' in df.columns:
+        product_type_master_renamed = product_type_master.rename(columns={'Id': 'ProductType_Fk_Id'})
+        if 'ProductTypeName' in product_type_master.columns:
+            df = df.merge(
+                product_type_master_renamed[['ProductType_Fk_Id', 'ProductTypeName']],
+                on='ProductType_Fk_Id',
+                how='left'
+            )
+    
+    # Resolve Name_of_Defence_Platform from DefencePlatform_Fk_Id
+    if not defence_platform_master.empty and 'DefencePlatform_Fk_Id' in df.columns:
+        defence_platform_master_renamed = defence_platform_master.rename(columns={'Id': 'DefencePlatform_Fk_Id'})
+        if 'Name_of_Defence_Platform' in defence_platform_master.columns:
+            df = df.merge(
+                defence_platform_master_renamed[['DefencePlatform_Fk_Id', 'Name_of_Defence_Platform']],
+                on='DefencePlatform_Fk_Id',
+                how='left'
+            )
+    
+    # Resolve PTAName from PTAType_Fk_Id
+    if not pta_master.empty and 'PTAType_Fk_Id' in df.columns:
+        pta_master_renamed = pta_master.rename(columns={'Id': 'PTAType_Fk_Id'})
+        if 'PTAName' in pta_master.columns:
+            df = df.merge(
+                pta_master_renamed[['PTAType_Fk_Id', 'PTAName']],
+                on='PTAType_Fk_Id',
+                how='left'
+            )
+    
+    df = df.fillna("")
+    return df
+
+
+def build_turnover_details_view(inputs: Path) -> pd.DataFrame:
+    """Build TurnOverDetails view with resolved company name and year."""
+    
+    # Find TurnOver file
+    p = _find_file(inputs, [
+        "dbo.CompanyTurnOver.csv",
+        "CompanyTurnOver.csv",
+    ])
+    if not p:
+        return pd.DataFrame(columns=[
+            "Company_FK_Id", "CompanyName", "Year", "Amount"
+        ])
+    
+    df = _read_csv(p)
+    # Note: This table uses Company_FK_Id instead of CompanyMaster_FK_ID
+    
+    # Load master tables for resolution
+    company_master = _read_csv(inputs / "dbo.CompanyMaster.csv")
+    year_master = _read_csv(inputs / "dbo.YearMaster.csv")
+    
+    # Resolve CompanyName from Company_FK_Id
+    if not company_master.empty and 'Company_FK_Id' in df.columns:
+        company_master_renamed = company_master.rename(columns={'Id': 'Company_FK_Id'})
+        cols_to_merge = ['Company_FK_Id']
+        if 'CompanyName' in company_master.columns:
+            cols_to_merge.append('CompanyName')
+        
+        if len(cols_to_merge) > 1:
+            df = df.merge(
+                company_master_renamed[cols_to_merge],
+                on='Company_FK_Id',
+                how='left'
+            )
+    
+    # Resolve Year from YearId
+    if not year_master.empty and 'YearId' in df.columns:
+        year_master_renamed = year_master.rename(columns={'Id': 'YearId'})
+        if 'Year' in year_master.columns:
+            df = df.merge(
+                year_master_renamed[['YearId', 'Year']],
+                on='YearId',
+                how='left'
+            )
+    
+    df = df.fillna("")
+    return df
+
+
 # --------------------------- Merged outputs ---------------------------
 
-def write_merged_company_csv(out_dir: Path, company: pd.DataFrame, cert: pd.DataFrame, fac: pd.DataFrame, prod: pd.DataFrame) -> Path:
+def write_merged_company_csv(out_dir: Path, company: pd.DataFrame, cert: pd.DataFrame, prod: pd.DataFrame) -> Path:
     """Write a denormalized company-level CSV with aggregated child text fields."""
     if company.empty:
         raise SystemExit("CompanyDetail is empty; cannot write merged CSV.")
@@ -482,18 +967,15 @@ def write_merged_company_csv(out_dir: Path, company: pd.DataFrame, cert: pd.Data
                   .reset_index())
 
     cert_cols = [c for c in ["CertificationType","Number","Year"] if c in cert.columns]
-    fac_cols  = [c for c in ["FacilityType","Category","SubCategory","FacilityName","Description","Equipment","Capability","Range"] if c in fac.columns]
     prod_cols = [c for c in ["ProductName","Category","Description"] if c in prod.columns]
 
     cagg = agg_join(cert, fk, cert_cols) if cert_cols else pd.DataFrame(columns=[fk])
-    fagg = agg_join(fac,  fk, fac_cols)  if fac_cols  else pd.DataFrame(columns=[fk])
     pagg = agg_join(prod, fk, prod_cols) if prod_cols else pd.DataFrame(columns=[fk])
 
     C = company.copy()
     if "Id" not in C.columns:
         raise SystemExit("CompanyDetail must contain an 'Id' column after normalization.")
     if not cagg.empty: C = C.merge(cagg.rename(columns={fk: "Id"}), on="Id", how="left")
-    if not fagg.empty: C = C.merge(fagg.rename(columns={fk: "Id"}), on="Id", how="left")
     if not pagg.empty: C = C.merge(pagg.rename(columns={fk: "Id"}), on="Id", how="left")
 
     # selection (optional; only if you added a companydetailenriched list)
@@ -502,8 +984,8 @@ def write_merged_company_csv(out_dir: Path, company: pd.DataFrame, cert: pd.Data
     return out_path
 
 
-def write_merged_company_json(out_dir: Path, company: pd.DataFrame, cert: pd.DataFrame, fac: pd.DataFrame, prod: pd.DataFrame) -> None:
-    """Write per-company JSON + JSONL with nested arrays (certifications/facilities/products)."""
+def write_merged_company_json(out_dir: Path, company: pd.DataFrame, cert: pd.DataFrame, prod: pd.DataFrame) -> None:
+    """Write per-company JSON + JSONL with nested arrays (certifications/products)."""
     if company.empty:
         raise SystemExit("CompanyDetail is empty; cannot write merged JSON.")
     fk = "CompanyMaster_FK_ID"
@@ -520,21 +1002,6 @@ def write_merged_company_json(out_dir: Path, company: pd.DataFrame, cert: pd.Dat
                 "year": r.get("Year",""),
                 "valid_from": r.get("ValidFrom",""),
                 "valid_to": r.get("ValidTo",""),
-            })
-
-    fac_by = {}
-    if not fac.empty:
-        for _, r in fac.iterrows():
-            fac_by.setdefault(r.get(fk, ""), []).append({
-                "facility_type": r.get("FacilityType",""),
-                "category": r.get("Category",""),
-                "subcategory": r.get("SubCategory",""),
-                "name": r.get("FacilityName",""),
-                "desc": r.get("Description",""),
-                "equipment": r.get("Equipment",""),
-                "capability": r.get("Capability",""),
-                "range": r.get("Range",""),
-                "accreditation": r.get("Accreditation",""),
             })
 
     prod_by = {}
@@ -583,18 +1050,10 @@ def write_merged_company_json(out_dir: Path, company: pd.DataFrame, cert: pd.Dat
             "duns": row.get("DUNS",""),
             "name_key": norm_key(row.get("CompanyName","")),
             # Classification fields
-            "is_government_company": row.get("is_government_company", False),
-            "is_union_government": row.get("is_union_government", False),
-            "is_state_government": row.get("is_state_government", False),
-            "is_private_company": row.get("is_private_company", False),
+            "is_government": row.get("is_government", False),
+            "is_private": row.get("is_private", False),
             "is_msme": row.get("is_msme", False),
-            "is_listed_company": row.get("is_listed_company", False),
-            "is_active_company": row.get("is_active_company", False),
-            "is_defence_company": row.get("is_defence_company", False),
-            "company_size_category": row.get("company_size_category", "Unknown"),
-            "company_type_normalized": row.get("company_type_normalized", "Unknown"),
             "certifications": cert_by.get(cid, []),
-            "facilities": fac_by.get(cid, []),
             "products": prod_by.get(cid, []),
         }
         objects.append(obj)
@@ -617,61 +1076,15 @@ def main():
     OUT = Path(args.views)
     OUT.mkdir(parents=True, exist_ok=True)
 
-    # 1) Build views
+    # 1) Build base CompanyDetail view
     print("• Building CompanyDetail ...")
     df_company = build_company_detail(IN)
-    df_company = _apply_field_selection(df_company, "CompanyDetail")
-    df_company.to_csv(OUT / "CompanyDetail.csv", index=False)
-    print(f"  -> {OUT/'CompanyDetail.csv'} ({len(df_company)} rows)")
-    
-    # 1b) Add company classifications
-    print("• Adding company classifications ...")
-    df_company_enriched = df_company.copy()
-    df_company_enriched = add_company_classifications(df_company_enriched, str(IN))
-    
-    # Write enriched version with classifications
-    df_company_enriched_selected = _apply_field_selection(df_company_enriched, "CompanyDetailEnriched")
-    df_company_enriched_selected.to_csv(OUT / "CompanyDetailEnriched.csv", index=False)
-    print(f"  -> {OUT/'CompanyDetailEnriched.csv'} ({len(df_company_enriched_selected)} rows)")
-    
-    # Write separate classifications file
-    write_company_classifications(OUT, df_company_enriched)
 
-    print("• Building Certification ...")
-    df_cert = build_certification_view(IN)
-    
-    # Add certification classifications
-    print("  → Classifying certifications...")
-    if not df_cert.empty:
-        cert_classifications = []
-        for _, row in df_cert.iterrows():
-            result = classify_certification(row.get('CertificationType', ''), row.get('Number', ''), row.get('Issuer', ''))
-            cert_classifications.append(result)
-        df_cert['CertCategory'] = [c['category'] for c in cert_classifications]
-        df_cert['CertScope'] = [c['scope'] if c['scope'] else '' for c in cert_classifications]
-        print(f"  → Classified {len([c for c in cert_classifications if c['category'] != 'General'])} certifications")
-    
-    df_cert = _apply_field_selection(df_cert, "Certification")
-    df_cert.to_csv(OUT / "Certification.csv", index=False)
-    print(f"  -> {OUT/'Certification.csv'} ({len(df_cert)} rows)")
-
-    print("• Building Facilities ...")
-    df_fac = build_facilities_view(IN)
-    
-    # Add facility classifications
-    print("  → Classifying facilities...")
-    if not df_fac.empty:
-        fac_classifications = []
-        for _, row in df_fac.iterrows():
-            result = classify_facility(row.get('FacilityName', ''), row.get('Description', ''), row.get('FacilityType', ''), row.get('Equipment', ''))
-            fac_classifications.append(result)
-        df_fac['FacilityPrimaryType'] = [c['primary_type'] for c in fac_classifications]
-        df_fac['SuggestedAccreditation'] = [c['accreditation_suggested'] if c['accreditation_suggested'] else '' for c in fac_classifications]
-        print(f"  → Classified {len([c for c in fac_classifications if c['primary_type'] != 'Other'])} facilities")
-    
-    df_fac = _apply_field_selection(df_fac, "Facilities")
-    df_fac.to_csv(OUT / "Facilities.csv", index=False)
-    print(f"  -> {OUT/'Facilities.csv'} ({len(df_fac)} rows)")
+    print("• Building CertificationDetail ...")
+    df_cert = build_certification_detail_view(IN)
+    df_cert = _apply_field_selection(df_cert, "CertificationDetail")
+    df_cert.to_csv(OUT / "CertificationDetail.csv", index=False)
+    print(f"  -> {OUT/'CertificationDetail.csv'} ({len(df_cert)} rows)")
 
     print("• Building Products ...")
     df_prod = build_products_view(IN)
@@ -696,13 +1109,66 @@ def main():
     df_prod.to_csv(OUT / "Products.csv", index=False)
     print(f"  -> {OUT/'Products.csv'} ({len(df_prod)} rows)")
 
-    # 2) Merged company outputs (CSV + JSON + JSONL) - using enriched company data
+    print("• Building RDFacilityDetails ...")
+    df_rd_facility = build_rd_facility_details_view(IN)
+    df_rd_facility = _apply_field_selection(df_rd_facility, "RDFacilityDetails")
+    df_rd_facility.to_csv(OUT / "RDFacilityDetails.csv", index=False)
+    print(f"  -> {OUT/'RDFacilityDetails.csv'} ({len(df_rd_facility)} rows)")
+
+    print("• Building TestFacilityDetails ...")
+    df_test_facility = build_test_facility_details_view(IN)
+    df_test_facility = _apply_field_selection(df_test_facility, "TestFacilityDetails")
+    df_test_facility.to_csv(OUT / "TestFacilityDetails.csv", index=False)
+    print(f"  -> {OUT/'TestFacilityDetails.csv'} ({len(df_test_facility)} rows)")
+
+    print("• Building ProductDetails ...")
+    df_product_details = build_product_details_view(IN)
+    df_product_details = _apply_field_selection(df_product_details, "ProductDetails")
+    df_product_details.to_csv(OUT / "ProductDetails.csv", index=False)
+    print(f"  -> {OUT/'ProductDetails.csv'} ({len(df_product_details)} rows)")
+
+    print("• Building TurnOverDetails ...")
+    df_turnover = build_turnover_details_view(IN)
+    df_turnover = _apply_field_selection(df_turnover, "TurnOverDetails")
+    df_turnover.to_csv(OUT / "TurnOverDetails.csv", index=False)
+    print(f"  -> {OUT/'TurnOverDetails.csv'} ({len(df_turnover)} rows)")
+
+    # Enrich CompanyDetail with aggregated data from certifications, products, and facilities
+    print("• Enriching CompanyDetail with aggregated facility and product information...")
+    df_company = _enrich_with_aggregated_data(df_company, df_cert, df_prod, df_rd_facility, df_test_facility)
+    
+    # Apply field selection and save enriched CompanyDetail
+    df_company = _apply_field_selection(df_company, "CompanyDetail")
+    df_company.to_csv(OUT / "CompanyDetail.csv", index=False)
+    print(f"  -> {OUT/'CompanyDetail.csv'} ({len(df_company)} rows)")
+    
+    # Report statistics
+    if 'is_government' in df_company.columns:
+        govt_count = df_company['is_government'].sum()
+        print(f"     ℹ  {govt_count} government companies")
+    if 'is_msme' in df_company.columns:
+        msme_count = df_company['is_msme'].sum()
+        print(f"     ℹ  {msme_count} MSME companies")
+    if 'HasRDFacility' in df_company.columns:
+        rd_count = df_company['HasRDFacility'].sum()
+        print(f"     ℹ  {rd_count} companies with R&D facilities")
+    if 'HasTestFacility' in df_company.columns:
+        test_count = df_company['HasTestFacility'].sum()
+        print(f"     ℹ  {test_count} companies with Test facilities")
+    if 'HasCertifications' in df_company.columns:
+        cert_count = df_company['HasCertifications'].sum()
+        print(f"     ℹ  {cert_count} companies with Certifications")
+    if 'HasProducts' in df_company.columns:
+        prod_count = df_company['HasProducts'].sum()
+        print(f"     ℹ  {prod_count} companies with Products")
+
+    # 2) Merged company outputs (CSV + JSON + JSONL)
     print("• Writing merged company CSV ...")
-    merged_csv = write_merged_company_csv(OUT, df_company_enriched, df_cert, df_fac, df_prod)
+    merged_csv = write_merged_company_csv(OUT, df_company, df_cert, df_prod)
     print(f"  -> {merged_csv}")
 
     print("• Writing merged company JSON/JSONL ...")
-    write_merged_company_json(OUT, df_company_enriched, df_cert, df_fac, df_prod)
+    write_merged_company_json(OUT, df_company, df_cert, df_prod)
     print(f"  -> {OUT/'MergedCompanyView.json'}")
     print(f"  -> {OUT/'MergedCompanyView.jsonl'}")
 

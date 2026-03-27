@@ -1,7 +1,7 @@
 {
-  "version": "1.0",
-  "description": "Comprehensive intent patterns for company queries based on ETL classifications",
-  "last_updated": "2025-10-04",
+  "version": "2.0",
+  "description": "Simplified intent patterns - only classification and location filters. Everything else uses semantic search.",
+  "last_updated": "2025-10-13",
   
   "classification_based_intents": {
     "ownership_type": {
@@ -116,154 +116,7 @@
           "examples": ["Active companies in Karnataka"]
         }
       ]
-    },
-    
-    "industry_domain": {
-      "description": "Queries about industry sectors using ETL classification: IndustryDomain, is_defence_company",
-      "patterns": [
-        {
-          "keywords": ["defence company", "defense company", "aerospace", "military"],
-          "filter_type": "defence",
-          "etl_column": "is_defence_company",
-          "industry_value": "Aerospace & Defence",
-          "examples": [
-            "Defence companies in India",
-            "Aerospace companies in Bangalore"
-          ]
-        },
-        {
-          "keywords": ["electrical company", "electronics company", "electrical electronics"],
-          "filter_type": "industry",
-          "industry_value": "Electrical & Electronics",
-          "etl_column": "IndustryDomain",
-          "examples": ["Electrical companies in Pune"]
-        },
-        {
-          "keywords": ["pharma", "pharmaceutical", "drug company"],
-          "filter_type": "industry",
-          "industry_value": "Pharmaceuticals",
-          "etl_column": "IndustryDomain",
-          "examples": ["Pharmaceutical companies in Hyderabad"]
-        },
-        {
-          "keywords": ["automotive", "automobile", "vehicle"],
-          "filter_type": "industry",
-          "industry_value": "Automotive",
-          "etl_column": "IndustryDomain",
-          "examples": ["Automotive companies in Chennai"]
-        },
-        {
-          "keywords": ["textile", "garment", "fabric"],
-          "filter_type": "industry",
-          "industry_value": "Textiles",
-          "etl_column": "IndustryDomain",
-          "examples": ["Textile companies in Coimbatore"]
-        },
-        {
-          "keywords": ["steel", "metal", "iron"],
-          "filter_type": "industry",
-          "industry_value": "Steel & Metals",
-          "etl_column": "IndustryDomain",
-          "examples": ["Steel companies in Jamshedpur"]
-        },
-        {
-          "keywords": ["chemical", "polymer"],
-          "filter_type": "industry",
-          "industry_value": "Chemicals",
-          "etl_column": "IndustryDomain",
-          "examples": ["Chemical companies in Gujarat"]
-        },
-        {
-          "keywords": ["food", "beverage", "dairy"],
-          "filter_type": "industry",
-          "industry_value": "Food & Beverages",
-          "etl_column": "IndustryDomain",
-          "examples": ["Food companies in India"]
-        },
-        {
-          "keywords": ["software", "IT", "technology", "digital"],
-          "filter_type": "industry",
-          "industry_value": "IT & Software",
-          "etl_column": "IndustryDomain",
-          "examples": ["IT companies in Bangalore"]
-        },
-        {
-          "keywords": ["construction", "infrastructure", "engineering"],
-          "filter_type": "industry",
-          "industry_value": "Construction & Engineering",
-          "etl_column": "IndustryDomain",
-          "examples": ["Construction companies in Delhi"]
-        },
-        {
-          "keywords": ["machinery", "equipment"],
-          "filter_type": "industry",
-          "industry_value": "Machinery & Equipment",
-          "etl_column": "IndustryDomain",
-          "examples": ["Machinery companies in Pune"]
-        },
-        {
-          "keywords": ["plastic", "polymer"],
-          "filter_type": "industry",
-          "industry_value": "Plastics",
-          "etl_column": "IndustryDomain",
-          "examples": ["Plastic companies in Mumbai"]
-        }
-      ]
     }
-  },
-  
-  "attribute_queries": {
-    "description": "Queries asking for specific company attributes",
-    "patterns": [
-      {
-        "attribute": "address",
-        "keywords": ["address of", "location of", "where is"],
-        "etl_columns": ["Address", "City", "State", "District", "Pincode"],
-        "examples": ["Address of HEG LIMITED", "Where is Tata Steel located"]
-      },
-      {
-        "attribute": "contact",
-        "keywords": ["contact", "phone", "email", "website"],
-        "etl_columns": ["Phone", "Email", "Website", "POCEmail"],
-        "examples": ["Contact details of BHEL", "Phone number of Infosys"]
-      },
-      {
-        "attribute": "registration",
-        "keywords": ["PAN", "CIN", "GST", "GSTIN", "registration"],
-        "etl_columns": ["Pan", "CIN", "CINNumber", "GSTIN", "GST"],
-        "examples": ["PAN of Reliance", "CIN number of TCS", "GST Number of company"]
-      },
-      {
-        "attribute": "industry",
-        "keywords": ["industry type", "sector", "domain"],
-        "etl_columns": ["IndustryDomain", "IndustrySubdomain"],
-        "examples": ["Industry type of Wipro", "What sector is HDFC in"]
-      },
-      {
-        "attribute": "products",
-        "keywords": ["products", "services", "what does"],
-        "etl_columns": ["ProductName", "Products"],
-        "examples": ["Products of Larsen & Toubro", "What does Mahindra make"]
-      },
-      {
-        "attribute": "certifications",
-        "keywords": ["certifications", "ISO", "certified"],
-        "etl_columns": ["CertificationType", "Certifications"],
-        "examples": ["Certifications of Godrej", "Is Maruti ISO certified"]
-      },
-      {
-        "attribute": "facilities",
-        "keywords": ["facilities", "plants", "factories"],
-        "etl_columns": ["FacilityType", "FacilityName"],
-        "examples": ["Facilities of Tata Motors", "Manufacturing plants"]
-      },
-      {
-        "attribute": "turnover",
-        "keywords": ["turnover", "revenue", "sales"],
-        "etl_columns": ["TurnOver", "Revenue"],
-        "examples": ["Turnover of Infosys", "Revenue of TCS"]
-      }
-    ]
   },
   
   "location_filters": {
@@ -286,57 +139,44 @@
     ]
   },
   
-  "combined_filters": {
-    "description": "Queries combining multiple filters",
-    "examples": [
-      {
-        "query": "Government companies in Karnataka",
-        "filters": ["ownership_type=government", "location=Karnataka"],
-        "etl_columns": ["is_government_company", "State"]
-      },
-      {
-        "query": "Listed IT companies in Bangalore",
-        "filters": ["listing_status=listed", "industry=IT & Software", "location=Bangalore"],
-        "etl_columns": ["is_listed_company", "IndustryDomain", "City"]
-      },
-      {
-        "query": "MSME electrical companies in Maharashtra",
-        "filters": ["size=msme", "industry=Electrical & Electronics", "location=Maharashtra"],
-        "etl_columns": ["is_msme", "IndustryDomain", "State"]
-      },
-      {
-        "query": "Private defence companies",
-        "filters": ["ownership=private", "industry=defence"],
-        "etl_columns": ["is_private_company", "is_defence_company"]
-      }
-    ]
-  },
-  
-  "query_templates": {
-    "description": "Common query templates users might ask",
-    "list_queries": [
-      "List of {filter_type} companies",
-      "Show me {filter_type} companies",
-      "Get all {filter_type} companies in {location}",
-      "How many {filter_type} companies in {location}",
-      "Find {filter_type} companies"
+  "supported_query_types": {
+    "description": "Query types handled by this simplified intent handler",
+    "csv_filters": [
+      "Classification filters (government, MSME, listed, private, active)",
+      "Location filters (companies in specific city/state)",
+      "Combined classification + location"
     ],
-    "count_queries": [
-      "How many {filter_type} companies",
-      "Count of {filter_type} companies in {location}",
-      "Number of companies in {location}"
+    "semantic_search": [
+      "Company attribute queries (address, contact, PAN, etc.)",
+      "Industry-specific queries (drone companies, ship manufacturing, etc.)",
+      "Product queries (consumable products, products to HAL, etc.)",
+      "Facility queries (test facilities, R&D facilities, etc.)",
+      "Certification queries (ISO 9001, etc.)",
+      "Research queries (advanced materials, etc.)",
+      "Any complex or ambiguous queries"
     ],
-    "attribute_queries": [
-      "{attribute} of {company_name}",
-      "What is the {attribute} of {company_name}",
-      "Show me {attribute} for {company_name}"
-    ]
+    "examples": {
+      "csv_filter": [
+        "Government companies in Karnataka",
+        "MSME companies in Pune",
+        "Companies in Bhopal",
+        "Listed companies in India"
+      ],
+      "semantic_search": [
+        "Address of FLONEX OIL TECHNOLOGIES",
+        "Contact details of ABC Corp",
+        "Drone manufacturing companies",
+        "Companies with ISO 9001 certification",
+        "Test facility for chemical testing"
+      ]
+    }
   },
   
   "notes": {
-    "priority": "Always prefer ETL-generated boolean columns over runtime keyword matching",
-    "performance": "Pre-classified data enables instant filtering without semantic search",
-    "extensibility": "Add new intents by updating ETL classifications in add_classifications.py",
-    "accuracy": "ETL uses comprehensive data analysis (HSN codes, products, facilities) for classification"
+    "version_2_changes": "Simplified to only handle classification and location filters. Removed attribute query detection and industry filters to reduce complexity and false matches.",
+    "design_philosophy": "Keep intent handler simple and reliable. Use CSV filters only for high-value, low-risk patterns. Default to semantic search for everything else.",
+    "csv_filters": "Fast and precise for classification (government, MSME, etc.) and pure location queries",
+    "semantic_search": "Flexible and robust for all other queries including attributes, products, facilities, certifications",
+    "maintenance": "Fewer patterns = fewer bugs. Semantic search handles edge cases naturally without fragile pattern matching."
   }
 }
